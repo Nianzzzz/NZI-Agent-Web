@@ -1,0 +1,23 @@
+FROM node:24-alpine
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-workspace.yaml ./
+COPY packages/shared-types/package.json ./packages/shared-types/
+COPY packages/backend/package.json ./packages/backend/
+COPY packages/frontend/package.json ./packages/frontend/
+
+RUN pnpm install --frozen-lockfile=false
+
+COPY packages/shared-types ./packages/shared-types
+COPY packages/backend ./packages/backend
+COPY packages/pi-agent ./pi-agent
+COPY packages/grok-agent ./grok-agent
+
+RUN pnpm --filter @nzi/backend build
+
+EXPOSE 4000
+
+CMD ["pnpm", "--filter", "@nzi/backend", "dev"]

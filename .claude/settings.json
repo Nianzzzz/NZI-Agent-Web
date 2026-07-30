@@ -1,0 +1,27 @@
+{
+  "teammateMode": "tmux",
+  "experimentalFeatures": {
+    "agentTeams": true
+  },
+  "defaultAgent": "fullstack-dev",
+  "modelRouting": {
+    "architect": "sonnet",
+    "fullstack-dev": "sonnet",
+    "frontend-dev": "sonnet",
+    "backend-dev": "sonnet",
+    "code-reviewer": "sonnet",
+    "security-auditor": "sonnet",
+    "test-engineer": "sonnet",
+    "doc-writer": "haiku",
+    "devops-engineer": "sonnet"
+  },
+  "hooks": {
+    "postToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "command": "echo '✅ 文件已修改'",
+        "timeout": 3000
+      }
+    ]
+  }
+}

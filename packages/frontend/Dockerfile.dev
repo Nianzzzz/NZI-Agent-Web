@@ -1,0 +1,18 @@
+FROM node:24-alpine
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-workspace.yaml ./
+COPY packages/shared-types/package.json ./packages/shared-types/
+COPY packages/frontend/package.json ./packages/frontend/
+
+RUN pnpm install --frozen-lockfile=false
+
+COPY packages/shared-types ./packages/shared-types
+COPY packages/frontend ./packages/frontend
+
+EXPOSE 3000
+
+CMD ["pnpm", "--filter", "@nzi/frontend", "dev"]

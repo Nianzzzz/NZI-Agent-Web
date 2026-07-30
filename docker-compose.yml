@@ -1,0 +1,101 @@
+NETWORK_NAME=nzi-network
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nzi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nzi
+      POSTGRES_PASSWORD: nzi_password
+      POSTGRES_DB: nzi_agent_web
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - nzi-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nzi"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: nzi-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - nzi-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./packages/backend
+      dockerfile: Dockerfile.dev
+    container_name: nzi-backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: "postgresql://nzi:nzi_password@postgres:5432/nzi_agent_web?schema=public"
+      REDIS_URL: "redis://redis:6379"
+      JWT_SECRET: "change-me-in-production-use-a-real-secret-key"
+      JWT_EXPIRY: "7d"
+      PORT: "4000"
+      HOST: "0.0.0.0"
+      CORS_ORIGIN: "http://localhost:3000"
+      NODE_ENV: "development"
+      XAI_API_KEY: ""
+      PI_AGENT_CONFIG_DIR: "/app/.pi"
+    volumes:
+      - ./packages/backend:/app/src
+      - ./packages/shared-types:/app/shared-types
+      - ./packages/pi-agent:/app/pi-agent
+      - nzi_pi_config:/app/.pi
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nzi-network
+    command: ["pnpm", "dev"]
+
+  frontend:
+    build:
+      context: ./packages/frontend
+      dockerfile: Dockerfile.dev
+    container_name: nzi-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost:4000"
+      NEXT_PUBLIC_WS_URL: "http://localhost:4000"
+    volumes:
+      - ./packages/frontend/src:/app/src
+      - ./packages/shared-types:/app/shared-types
+    depends_on:
+      - backend
+    networks:
+      - nzi-network
+    command: ["pnpm", "dev"]
+
+volumes:
+  postgres_data:
+  redis_data:
+  nzi_pi_config:
+
+networks:
+  nzi-network:
+    driver: bridge
