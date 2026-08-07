@@ -89,13 +89,17 @@ export class SessionService {
   }
 
   /**
-   * 归档会话（软删除）
+   * 永久删除会话（硬删除 + 关联消息级联删除）
    */
   async archiveSession(sessionId: string, tenantId: string) {
-    return this.prisma.session.update({
-      where: { id: sessionId },
-      data: { status: "ARCHIVED" },
-      select: { id: true, status: true },
+    // 先删关联消息，再删会话（事务保证原子性）
+    return this.prisma.$transaction(async (tx) => {
+      await tx.message.deleteMany({ where: { sessionId } });
+      const session = await tx.session.delete({
+        where: { id: sessionId },
+        select: { id: true, status: true },
+      });
+      return session;
     });
   }
 

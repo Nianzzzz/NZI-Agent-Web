@@ -71,6 +71,7 @@ export function useChatSocket({
     setWebSocket,
     appendMessage,
     updateStreamingContent,
+    setStreaming,
     completeStreaming,
     interruptStreaming,
     markStreamingError,
@@ -161,7 +162,7 @@ export function useChatSocket({
           break;
       }
     },
-    [updateStreamingContent, completeStreaming, markStreamingError, interruptStreaming, addNode, appendNodeDelta, finalizeNode],
+    [updateStreamingContent, setStreaming, completeStreaming, markStreamingError, interruptStreaming, addNode, appendNodeDelta, finalizeNode],
   );
 
   const connect = useCallback(() => {
@@ -268,7 +269,7 @@ export function useChatSocket({
       };
       appendMessage(sessionId, userMessage);
 
-      // 2. 准备 assistant 占位
+      // 2. 准备 assistant 占位（同时写 messagesBySession + streamingBySession）
       const placeholder: ChatMessage = {
         id: requestId,
         sessionId,
@@ -278,6 +279,7 @@ export function useChatSocket({
         createdAt: new Date(),
       };
       appendMessage(sessionId, placeholder);
+      setStreaming(sessionId, placeholder);
       registerActiveRequest(sessionId, requestId);
 
       // 3. 发往 WS

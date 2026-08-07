@@ -60,6 +60,8 @@ interface ChatActions {
 
   appendMessage: (sessionId: string, message: ChatMessage) => void;
   updateStreamingContent: (sessionId: string, delta: string) => void;
+  /** 设置 streaming 消息（占位，供 addNode/appendNodeDelta 使用） */
+  setStreaming: (sessionId: string, message: ChatMessage) => void;
   completeStreaming: (sessionId: string, message: ChatMessage) => void;
   interruptStreaming: (sessionId: string, partialText: string) => void;
   markStreamingError: (sessionId: string, errorText: string) => void;
@@ -147,6 +149,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       };
     }),
+
+  setStreaming: (sessionId, message) =>
+    set((state) => ({
+      streamingBySession: {
+        ...state.streamingBySession,
+        [sessionId]: message,
+      },
+    })),
 
   completeStreaming: (sessionId, message) =>
     set((state) => {

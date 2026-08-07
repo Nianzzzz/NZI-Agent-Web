@@ -34,8 +34,21 @@ export const useSessionStore = create<SessionState & SessionActions>((set, get) 
   setSessions: (sessions) => set({ sessions }),
   addSession: (session) =>
     set((state) => ({ sessions: [session, ...state.sessions] })),
-  removeSession: (id) =>
-    set((state) => ({ sessions: state.sessions.filter((s) => s.id !== id) })),
+  removeSession: (id) => {
+    // 乐观删除：先立即从列表移除，再异步调后端
+    set((state) => ({ sessions: state.sessions.filter((s) => s.id !== id) }));
+    // 异步调后端 DELETE
+    const token = useAuthStore.getState().token;
+    if (token) {
+      fetch(`/api/sessions/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {
+        // 后端删除失败，静默刷新恢复
+        get().fetchSessions();
+      });
+    }
+  },
   setLoading: (isLoading) => set({ isLoading }),
   setError: (error) => set({ error }),
 
