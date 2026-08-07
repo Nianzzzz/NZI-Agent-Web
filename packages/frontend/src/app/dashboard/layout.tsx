@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import DashboardLayout from "./layout";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -10,5 +9,5 @@ export default function DashboardLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return <DashboardLayout>{children}</DashboardLayout>;
+  return <div className="dashboard-layout">{children}</div>;
 }
