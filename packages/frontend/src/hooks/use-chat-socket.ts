@@ -29,14 +29,6 @@ export interface UseChatSocketReturn {
 const MAX_RECONNECT_ATTEMPTS = 5;
 const WS_URL = (process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:4000").replace(/^http/, "ws");
 
-/**
- * 与后端 ws-chat.controller.ts 协议对齐：
- *  - chunk: 累积流式 delta
- *  - done: 结束整轮（content 为最终全文，streaming -> completed）
- *  - error: 出错（streaming -> error）
- *  - interrupted: 中断（streaming -> interrupted）
- *  - status: 仅作状态指示，不写入内容
- */
 type IncomingMessage =
   | { type: "chunk"; payload: { requestId?: string; delta: string; reasoning?: boolean } }
   | { type: "node"; payload: { requestId?: string; node: TimelineNode } }
@@ -57,7 +49,7 @@ export function useChatSocket({
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const activeRequestIdRef = useRef<string | null>(null);
-  const connectingRef = useRef(false); // T010: prevent double-connect race
+  const connectingRef = useRef(false); // prevent double-connect race
   const [, forceTick] = useState(0);
 
   const {
@@ -162,12 +154,21 @@ export function useChatSocket({
           break;
       }
     },
-    [updateStreamingContent, setStreaming, completeStreaming, markStreamingError, interruptStreaming, addNode, appendNodeDelta, finalizeNode],
+    [
+      updateStreamingContent,
+      setStreaming,
+      completeStreaming,
+      markStreamingError,
+      interruptStreaming,
+      addNode,
+      appendNodeDelta,
+      finalizeNode,
+    ],
   );
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
-    if (connectingRef.current) return; // T010: prevent double-connect race
+    if (connectingRef.current) return; // prevent double-connect
     connectingRef.current = true;
     setConnectionStatus("connecting");
     setConnectionError(null);
@@ -269,7 +270,7 @@ export function useChatSocket({
       };
       appendMessage(sessionId, userMessage);
 
-      // 2. 准备 assistant 占位（同时写 messagesBySession + streamingBySession）
+      // 2. 准备 assistant 占位（仅写 streamingBySession；done 后才落库到 messagesBySession，避免 key 冲突）
       const placeholder: ChatMessage = {
         id: requestId,
         sessionId,
@@ -278,7 +279,6 @@ export function useChatSocket({
         status: "streaming",
         createdAt: new Date(),
       };
-      appendMessage(sessionId, placeholder);
       setStreaming(sessionId, placeholder);
       registerActiveRequest(sessionId, requestId);
 
@@ -290,7 +290,7 @@ export function useChatSocket({
       ws.send(JSON.stringify(message));
       forceTick((n) => n + 1);
     },
-    [sessionId, appendMessage, registerActiveRequest, onError],
+    [sessionId, appendMessage, setStreaming, registerActiveRequest, onError],
   );
 
   const stopGeneration = useCallback(() => {
