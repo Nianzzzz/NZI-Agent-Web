@@ -24,6 +24,7 @@ import { useAuthStore } from "@/lib/auth-store";
 import { useChatSocket } from "@/hooks/use-chat-socket";
 import { useChatStore, type ChatMessage } from "@/stores/chat.store";
 import { fetchSessionDetail, fetchSessionMessages, type SessionDetail } from "@/lib/chat-api";
+import AgentTimeline from "@/components/chat/AgentTimeline";
 import { cn } from "@/lib/utils";
 
 const ENGINE_META: Record<"PI" | "GROK", { label: string; gradient: string; ring: string }> = {
@@ -44,6 +45,7 @@ function MessageBubble({ message, engineGradient }: {
   engineGradient: string;
 }) {
   const isUser = message.role === "user";
+  const hasTimeline = !isUser && message.nodes && message.nodes.length > 0;
   return (
     <div className={cn("flex w-full gap-3", isUser ? "justify-end" : "justify-start")}>
       {!isUser && (
@@ -79,6 +81,12 @@ function MessageBubble({ message, engineGradient }: {
             <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-current align-middle" />
           )}
         </div>
+
+        {/* T010: Agent Loop Timeline */}
+        {hasTimeline && (
+          <AgentTimeline nodes={message.nodes!} engineGradient={engineGradient} />
+        )}
+
         {message.status === "interrupted" && (
           <p className="mt-2 flex items-center gap-1 text-[11px] opacity-70">
             <AlertCircle className="h-3 w-3" />

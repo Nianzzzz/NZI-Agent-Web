@@ -6,6 +6,7 @@
  * - 消息列表 (messages) 和正在流式生成的当前消息 (streamingMessage)
  * - 连接状态 (connectionStatus)
  * - 待停止的请求映射 (activeRequestIds -> sessionIds)
+ * - T010: 每条 assistant 消息携带 nodes: TimelineNode[]（Agent Loop Timeline）
  *
  * 设计原则：
  * - Hook 层负责 WebSocket 事件监听和 dispatch
@@ -13,6 +14,7 @@
  */
 
 import { create } from "zustand";
+import type { TimelineNode } from "@/types/chat.types";
 
 export interface ChatMessage {
   id: string;
@@ -23,6 +25,8 @@ export interface ChatMessage {
   status: "streaming" | "completed" | "interrupted" | "error";
   createdAt: Date;
   latencyMs?: number;
+  /** T010: Agent Loop Timeline 节点 */
+  nodes?: TimelineNode[];
 }
 
 interface ActiveRequest {
@@ -60,6 +64,17 @@ interface ChatActions {
   interruptStreaming: (sessionId: string, partialText: string) => void;
   markStreamingError: (sessionId: string, errorText: string) => void;
 
+  /** T010: 在 streaming 消息上添加一个新节点 */
+  addNode: (sessionId: string, node: TimelineNode) => void;
+  /** T010: 追加节点 delta 内容（更新 content + node.delta） */
+  appendNodeDelta: (sessionId: string, nodeId: string, delta: string) => void;
+  /** T010: 标记节点为 done/error 状态 */
+  finalizeNode: (
+    sessionId: string,
+    nodeId: string,
+    updates: Partial<Pick<TimelineNode, "status" | "title" | "toolOutput" | "durationMs">>,
+  ) => void;
+
   registerActiveRequest: (sessionId: string, requestId: string) => void;
   unregisterActiveRequest: (requestId: string) => void;
 
@@ -76,6 +91,27 @@ const initialActiveSessionState = {
   activeRequests: [],
   ws: null,
 };
+
+/** helper: 修改 streamingBySession 中某条消息的 nodes 数组 */
+function patchNodes(
+  state: ChatState,
+  sessionId: string,
+  patcher: (nodes: TimelineNode[]) => TimelineNode[],
+): Partial<ChatState> {
+  const streaming = state.streamingBySession[sessionId];
+  if (!streaming) return {};
+  const existing = streaming.nodes ?? [];
+  const updated: ChatMessage = {
+    ...streaming,
+    nodes: patcher(existing),
+  };
+  return {
+    streamingBySession: {
+      ...state.streamingBySession,
+      [sessionId]: updated,
+    },
+  };
+}
 
 export const useChatStore = create<ChatStore>((set, get) => ({
   ...initialActiveSessionState,
@@ -176,6 +212,43 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         activeRequests: state.activeRequests.filter((r) => r.requestId !== streaming.id),
       };
     }),
+
+  addNode: (sessionId, node) =>
+    set((state) => patchNodes(state, sessionId, (nodes) => [...nodes, node])),
+
+  appendNodeDelta: (sessionId, nodeId, delta) =>
+    set((state) => {
+      const patch = patchNodes(state, sessionId, (nodes) =>
+        nodes.map((n) => (n.id === nodeId ? { ...n, delta: (n.delta ?? "") + delta } : n)),
+      );
+      // 同时把 delta 拼到 streaming.content（让 message.content 仍反映最终文本）
+      const streaming = state.streamingBySession[sessionId];
+      if (streaming) {
+        const node = (streaming.nodes ?? []).find((n) => n.id === nodeId);
+        // 只把 answer 节点的内容加到顶层 content；thinking/tool 不计入顶层文本
+        if (node?.type === "answer") {
+          const updated: ChatMessage = {
+            ...streaming,
+            content: streaming.content + delta,
+          };
+          return {
+            ...patch,
+            streamingBySession: {
+              ...state.streamingBySession,
+              [sessionId]: updated,
+            },
+          };
+        }
+      }
+      return patch;
+    }),
+
+  finalizeNode: (sessionId, nodeId, updates) =>
+    set((state) =>
+      patchNodes(state, sessionId, (nodes) =>
+        nodes.map((n) => (n.id === nodeId ? { ...n, ...updates } : n)),
+      ),
+    ),
 
   registerActiveRequest: (sessionId, requestId) =>
     set((state) => ({

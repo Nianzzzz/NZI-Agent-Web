@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useChatStore, type ChatMessage } from "@/stores/chat.store";
+import type { TimelineNode } from "@/types/chat.types";
 
 export interface UseChatSocketOptions {
   readonly sessionId: string;
@@ -38,6 +39,7 @@ const WS_URL = (process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:4000").replace
  */
 type IncomingMessage =
   | { type: "chunk"; payload: { requestId?: string; delta: string; reasoning?: boolean } }
+  | { type: "node"; payload: { requestId?: string; node: TimelineNode } }
   | { type: "done"; payload: { requestId?: string; content: string; latencyMs?: number } }
   | { type: "error"; payload: { requestId?: string; message: string } }
   | { type: "interrupted"; payload: { requestId?: string; content: string; reason: string } }
@@ -55,6 +57,7 @@ export function useChatSocket({
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const activeRequestIdRef = useRef<string | null>(null);
+  const connectingRef = useRef(false); // T010: prevent double-connect race
   const [, forceTick] = useState(0);
 
   const {
@@ -71,6 +74,9 @@ export function useChatSocket({
     completeStreaming,
     interruptStreaming,
     markStreamingError,
+    addNode,
+    appendNodeDelta,
+    finalizeNode,
     registerActiveRequest,
     unregisterActiveRequest,
   } = useChatStore();
@@ -93,6 +99,25 @@ export function useChatSocket({
         case "status":
           // 暂不展示 status 文本
           break;
+        case "node": {
+          const node = data.payload?.node;
+          if (!node) return;
+          const { id, phase, type, title, delta, status: nodeStatus, toolInput, toolOutput, durationMs, startedAt } = node;
+          if (phase === "start") {
+            addNode(sessionIdLocal, { id, type, phase, title, status: "running", toolInput, startedAt });
+          } else if (phase === "delta") {
+            appendNodeDelta(sessionIdLocal, id, delta ?? "");
+          } else if (phase === "end" || phase === "error") {
+            finalizeNode(sessionIdLocal, id, {
+              status: nodeStatus ?? (phase === "error" ? "error" : "done"),
+              title,
+              toolOutput,
+              durationMs,
+            });
+          }
+          forceTick((n) => n + 1);
+          break;
+        }
         case "chunk": {
           const delta = data.payload?.delta ?? "";
           if (!delta) return;
@@ -136,11 +161,13 @@ export function useChatSocket({
           break;
       }
     },
-    [updateStreamingContent, completeStreaming, markStreamingError, interruptStreaming],
+    [updateStreamingContent, completeStreaming, markStreamingError, interruptStreaming, addNode, appendNodeDelta, finalizeNode],
   );
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (connectingRef.current) return; // T010: prevent double-connect race
+    connectingRef.current = true;
     setConnectionStatus("connecting");
     setConnectionError(null);
 
@@ -155,6 +182,7 @@ export function useChatSocket({
     wsRef.current = ws;
 
     ws.addEventListener("open", () => {
+      connectingRef.current = false;
       setConnectionStatus("connected");
       setWebSocket(ws);
       reconnectAttemptsRef.current = 0;
@@ -179,6 +207,7 @@ export function useChatSocket({
     });
 
     ws.addEventListener("close", (event) => {
+      connectingRef.current = false;
       setConnectionStatus("disconnected");
       setWebSocket(null);
       onDisconnect?.();

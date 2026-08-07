@@ -29,6 +29,7 @@ export interface ClientMessage {
 export type ServerMessageType =
   | "status"
   | "chunk"
+  | "node"
   | "done"
   | "error"
   | "interrupted";
@@ -43,6 +44,28 @@ export interface ChunkPayload {
   requestId: string;
   delta: string;
   reasoning?: boolean;
+}
+
+/** Agent Loop Timeline 节点事件 */
+export type TimelineNodeType = "thinking" | "tool" | "answer";
+export type TimelineNodePhase = "start" | "delta" | "end" | "error";
+
+export interface TimelineNode {
+  id: string;
+  type: TimelineNodeType;
+  phase: TimelineNodePhase;
+  title?: string;
+  delta?: string;
+  status?: "running" | "done" | "error";
+  toolInput?: Record<string, unknown>;
+  toolOutput?: string;
+  durationMs?: number;
+  startedAt?: number;
+}
+
+export interface NodePayload {
+  requestId: string;
+  node: TimelineNode;
 }
 
 export interface DonePayload {
@@ -63,15 +86,24 @@ export interface InterruptedPayload {
   reason: "user_stop" | "disconnect";
 }
 
+export type ServerMessagePayload =
+  | StatusPayload
+  | ChunkPayload
+  | NodePayload
+  | DonePayload
+  | ErrorPayload
+  | InterruptedPayload;
+
 export interface ServerMessage {
   type: ServerMessageType;
-  payload: StatusPayload | ChunkPayload | DonePayload | ErrorPayload | InterruptedPayload;
+  payload: ServerMessagePayload;
 }
 
 // ─── 本地 UI 消息模型（用于前端渲染） ──────────────────────────
 
 export type MessageRole = "user" | "assistant" | "tool_result";
 
+/** ChatMessage 现在携带 timeline 节点列表 */
 export interface ChatMessage {
   id: string;
   sessionId: string;
@@ -81,6 +113,8 @@ export interface ChatMessage {
   status: "streaming" | "completed" | "interrupted" | "error";
   createdAt: Date;
   latencyMs?: number;
+  /** Agent Loop Timeline 节点（仅 assistant 消息） */
+  nodes?: TimelineNode[];
 }
 
 // ─── 连接状态 ────────────────────────────────────────────────────

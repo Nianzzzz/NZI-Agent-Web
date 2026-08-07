@@ -32,6 +32,7 @@ export interface ClientMessage {
 export type ServerMessageType =
   | "status"
   | "chunk"
+  | "node"
   | "done"
   | "error"
   | "interrupted";
@@ -46,7 +47,7 @@ export interface ServerStatusPayload {
   text?: string;
 }
 
-/** 服务端 -> 客户端：文本分片 */
+/** 服务端 -> 客户端：文本分片（兼容旧版，deprecated） */
 export interface ServerChunkPayload {
   /** 当前请求的上下文 ID */
   requestId?: string;
@@ -54,6 +55,38 @@ export interface ServerChunkPayload {
   delta: string;
   /** 是否包含思维过程 */
   reasoning?: boolean;
+}
+
+/** 服务端 -> 客户端：Agent Loop Timeline 节点事件 */
+export type TimelineNodeType = "thinking" | "tool" | "answer";
+export type TimelineNodePhase = "start" | "delta" | "end" | "error";
+
+export interface TimelineNode {
+  /** 节点 ID（前端 key） */
+  id: string;
+  /** 节点类型 */
+  type: TimelineNodeType;
+  /** 阶段：start 创建节点 / delta 追加内容 / end 节点结束 / error 节点出错 */
+  phase: TimelineNodePhase;
+  /** 节点标题（如 "调用 web_search"） */
+  title?: string;
+  /** 增量内容（delta 阶段） */
+  delta?: string;
+  /** 节点状态：running / done / error（end 阶段） */
+  status?: "running" | "done" | "error";
+  /** 工具调用参数（tool 节点 start 阶段） */
+  toolInput?: Record<string, unknown>;
+  /** 工具调用结果摘要（tool 节点 end 阶段） */
+  toolOutput?: string;
+  /** 节点耗时（end 阶段） */
+  durationMs?: number;
+  /** 节点起始时间戳（start 阶段） */
+  startedAt?: number;
+}
+
+export interface ServerNodePayload {
+  requestId?: string;
+  node: TimelineNode;
 }
 
 /** 服务端 -> 客户端：生成完成 */
@@ -88,5 +121,11 @@ export interface ServerInterruptedPayload {
 
 export interface ServerMessage {
   type: ServerMessageType;
-  payload: ServerStatusPayload | ServerChunkPayload | ServerDonePayload | ServerErrorPayload | ServerInterruptedPayload;
+  payload:
+    | ServerStatusPayload
+    | ServerChunkPayload
+    | ServerNodePayload
+    | ServerDonePayload
+    | ServerErrorPayload
+    | ServerInterruptedPayload;
 }

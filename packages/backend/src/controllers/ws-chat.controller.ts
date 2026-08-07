@@ -19,11 +19,14 @@ import type { TokenPayload } from "../config/auth.config.js";
 import { SessionService } from "../services/session.service.js";
 import { routePromptByProvider } from "../engine/engine-bridge.js";
 import { EngineProvider } from "@nzi/shared-types";
-import type { ClientMessage, ServerMessage } from "../ws/chat.types.js";
+import type { ClientMessage, ServerMessage, TimelineNode } from "../ws/chat.types.js";
 
 interface RequestContext {
   abortController: AbortController;
+  /** 累积最终 answer 文本（落库用） */
   texts: string[];
+  /** Agent Loop Timeline 节点（按引擎 nodeId 索引） */
+  nodes: Map<string, TimelineNode>;
 }
 
 export class WsChatController {
@@ -186,11 +189,13 @@ export class WsChatController {
     // ─── 流式调用引擎 ───────────────────────────────────────────
     const abortController = new AbortController();
     const texts: string[] = [];
+    const nodes = new Map<string, TimelineNode>();
     const startTime = Date.now();
 
     activeRequests.set(requestId, {
       abortController,
       texts,
+      nodes,
       sessionId,
       rootEventId,
       provider: agentType,
@@ -211,49 +216,114 @@ export class WsChatController {
         }
 
         const eventType = event.eventType as string;
-        switch (eventType) {
-          case "message_update": {
-            if (event.content) {
+        const nodeKind = (event.eventData?.nodeKind as string | undefined) ?? null;
+
+        // ─── T010: 引擎事件 → WS node 事件翻译 ──────────────
+        if (eventType === "tool_execution_start" || eventType === "message_start") {
+          if (!nodeKind) continue; // agent_start / turn_start 不上 timeline
+          const node: TimelineNode = {
+            id: event.nodeId,
+            type: nodeKind as "thinking" | "tool" | "answer",
+            phase: "start",
+            title:
+              (event.eventData?.title as string | undefined) ??
+              this.defaultNodeTitle(nodeKind as "thinking" | "tool" | "answer"),
+            status: "running",
+            toolInput: event.eventData?.toolInput as Record<string, unknown> | undefined,
+            startedAt: event.timestamp,
+          };
+          nodes.set(event.nodeId, node);
+          this.sendSocket(socket, {
+            type: "node",
+            payload: { requestId, node },
+          } satisfies ServerMessage);
+          continue;
+        }
+
+        if (eventType === "tool_execution_update" || eventType === "message_update") {
+          if (!nodeKind) {
+            // 兼容旧版：没标记 nodeKind 的 message_update 视作 answer chunk
+            if (eventType === "message_update" && event.content) {
               texts.push(event.content);
+              this.sendSocket(socket, {
+                type: "chunk",
+                payload: { requestId, delta: event.content },
+              } satisfies ServerMessage);
             }
-            this.sendSocket(socket, {
-              type: "chunk",
-              payload: {
-                requestId,
+            continue;
+          }
+          if (event.content) {
+            texts.push(event.content);
+            const existing = nodes.get(event.nodeId);
+            if (existing) {
+              existing.delta = (existing.delta ?? "") + event.content;
+            }
+          }
+          this.sendSocket(socket, {
+            type: "node",
+            payload: {
+              requestId,
+              node: {
+                id: event.nodeId,
+                type: nodeKind as "thinking" | "tool" | "answer",
+                phase: "delta",
                 delta: event.content ?? "",
-                reasoning: !!event.eventData?.reasoning,
               },
-            } satisfies ServerMessage);
-            break;
-          }
-          case "error": {
-            finalDoneSent = true;
-            await this.persistInterruptedMessage({
-              texts,
-              sessionId,
-              rootEventId,
-              suffix: "[生成出错]",
-              status: "INTERRUPTED",
-            });
-            this.sendSocket(socket, {
-              type: "error",
-              payload: { requestId, message: event.content ?? "Engine error" },
-            } satisfies ServerMessage);
-            break;
-          }
-          case "message_end":
-          case "agent_end": {
+            },
+          } satisfies ServerMessage);
+          continue;
+        }
+
+        if (eventType === "tool_execution_end" || eventType === "message_end") {
+          if (!nodeKind) continue;
+          const prior = nodes.get(event.nodeId);
+          const node: TimelineNode = {
+            id: event.nodeId,
+            type: nodeKind as "thinking" | "tool" | "answer",
+            phase: "end",
+            title: prior?.title,
+            status: "done",
+            toolInput: prior?.toolInput,
+            toolOutput: event.eventData?.toolOutput as string | undefined,
+            durationMs: event.durationMs,
+            startedAt: prior?.startedAt,
+          };
+          nodes.set(event.nodeId, node);
+          this.sendSocket(socket, {
+            type: "node",
+            payload: { requestId, node },
+          } satisfies ServerMessage);
+          continue;
+        }
+
+        if (eventType === "error") {
+          finalDoneSent = true;
+          await this.persistInterruptedMessage({
+            texts,
+            sessionId,
+            rootEventId,
+            suffix: "[生成出错]",
+            status: "INTERRUPTED",
+          });
+          this.sendSocket(socket, {
+            type: "error",
+            payload: { requestId, message: event.content ?? "Engine error" },
+          } satisfies ServerMessage);
+          continue;
+        }
+
+        if (eventType === "agent_end" || eventType === "turn_end") {
+          // 引擎声明本轮结束 — 落库 + 推 done
+          if (!finalDoneSent && texts.length > 0) {
             const fullText = texts.join("");
-            if (fullText) {
-              await this.sessionService.createMessage({
-                sessionId,
-                role: "ASSISTANT",
-                content: fullText,
-                rootEventId: rootEventId ?? undefined,
-                status: "COMPLETED",
-                latencyMs: Date.now() - startTime,
-              });
-            }
+            await this.sessionService.createMessage({
+              sessionId,
+              role: "ASSISTANT",
+              content: fullText,
+              rootEventId: rootEventId ?? undefined,
+              status: "COMPLETED",
+              latencyMs: Date.now() - startTime,
+            });
             this.sendSocket(socket, {
               type: "done",
               payload: {
@@ -263,10 +333,7 @@ export class WsChatController {
               },
             } satisfies ServerMessage);
             finalDoneSent = true;
-            break;
           }
-          default:
-            break;
         }
       }
 
@@ -410,5 +477,12 @@ export class WsChatController {
     } catch {
       // 对方已断开
     }
+  }
+
+  /** Timeline 节点默认标题 */
+  private defaultNodeTitle(kind: "thinking" | "tool" | "answer"): string {
+    if (kind === "thinking") return "思考中…";
+    if (kind === "tool") return "调用工具";
+    return "回答";
   }
 }
