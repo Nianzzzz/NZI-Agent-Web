@@ -49,7 +49,8 @@ export function useChatSocket({
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const activeRequestIdRef = useRef<string | null>(null);
-  const connectingRef = useRef(false); // prevent double-connect race
+  const connectingRef = useRef(false);
+  const mountedRef = useRef(true); // T010: track mount to prevent updates after unmount
   const [, forceTick] = useState(0);
 
   const {
@@ -168,10 +169,16 @@ export function useChatSocket({
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
-    if (connectingRef.current) return; // prevent double-connect
+    if (connectingRef.current) return;
     connectingRef.current = true;
     setConnectionStatus("connecting");
     setConnectionError(null);
+
+    // Close previous socket if any (cleanup before new connect)
+    const prev = wsRef.current;
+    if (prev && prev.readyState !== WebSocket.CLOSED) {
+      try { prev.close(1000, "Reconnecting"); } catch { /* ignore */ }
+    }
 
     const url = new URL(WS_URL);
     url.pathname = "/api/ws/chat";
@@ -184,6 +191,7 @@ export function useChatSocket({
     wsRef.current = ws;
 
     ws.addEventListener("open", () => {
+      if (!mountedRef.current) return;
       connectingRef.current = false;
       setConnectionStatus("connected");
       setWebSocket(ws);
@@ -193,6 +201,7 @@ export function useChatSocket({
     });
 
     ws.addEventListener("message", (event) => {
+      if (!mountedRef.current) return;
       try {
         const data = JSON.parse(event.data as string) as IncomingMessage;
         handleIncoming(sessionId, data);
@@ -202,6 +211,7 @@ export function useChatSocket({
     });
 
     ws.addEventListener("error", () => {
+      if (!mountedRef.current) return;
       const errorMsg = "WebSocket connection error";
       setConnectionError(errorMsg);
       setConnectionStatus("error");
@@ -209,6 +219,7 @@ export function useChatSocket({
     });
 
     ws.addEventListener("close", (event) => {
+      if (!mountedRef.current) return;
       connectingRef.current = false;
       setConnectionStatus("disconnected");
       setWebSocket(null);
@@ -311,8 +322,12 @@ export function useChatSocket({
   }, [sessionId, activeRequests, unregisterActiveRequest]);
 
   useEffect(() => {
+    mountedRef.current = true;
     if (autoConnect) connect();
-    return () => disconnect();
+    return () => {
+      mountedRef.current = false;
+      disconnect();
+    };
   }, [autoConnect]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
