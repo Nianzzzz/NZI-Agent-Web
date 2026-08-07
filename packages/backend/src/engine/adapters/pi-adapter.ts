@@ -1,47 +1,198 @@
-import type { IEngineAdapter } from "@nzi/shared-types";
+import type { IEngineAdapter, NZiAgentEvent, PromptOptions } from "@nzi/shared-types";
+import { AgentEventType, EngineProvider } from "@nzi/shared-types";
+import { PiEventNormalizer, type NormalizerContext, type PiNativeEvent } from "../normalizer/pi-event-normalizer.js";
 
 /**
- * T003.1 — Pi Adapter 骨架
+ * T003.1 — Pi Adapter 实现
  *
- * 当前阶段：接口和依赖注入预留
+ * 职责：桥接 Pi Agent SDK → NZi 统一事件流
  *
- * 已知 SDK 契约（已验证）：
+ * 设计原则：
+ * 1. 不修改 Pi Agent 源码
+ * 2. 只使用公开 SDK API（createAgentSession, session.prompt, session.subscribe）
+ * 3. 凭据通过环境变量注入（不依赖 Pi 原生 auth）
+ * 4. 事件转换委托给 PiEventNormalizer（单一职责）
+ *
+ * SDK 契约（已验证）：
  * - createAgentSession(options?) → Promise<{ session, extensionsResult }>
- * - session.prompt(text, options?) → Promise<void>（fire-and-forget）
- * - session.subscribe(listener) → () => void（unsubscribe）
- * - session.agent.messages: AgentMessage[]
+ * - session.prompt(text) → Promise<void> (fire-and-forget)
+ * - session.subscribe(listener) → () => void (unsubscribe)
  * - session.isStreaming: boolean
- *
- * 凭据注入方式：
- * - 不依赖 Pi Agent 原生 auth 系统
- * - 通过 process.env.XAI_API_KEY 在初始化时注入
- * - NZi Credential Manager（Phase 3）负责加密存储和运行时注入
+ * - session.agent.messages: AgentMessage[]
  */
-export class PiAdapter implements IEngineAdapter {
-  readonly name: IEngineAdapter["name"] = "PI";
 
-  // TODO T003.1 实现：
-  //   initialize(): 确认 SDK 可导入，初始化配置路径
-  //   isAvailable(): 检查 Node.js 版本 >= 22.19 + pi-agent 包可解析
-  //   streamPrompt(): 创建 session → subscribe → prompt → yield 事件
-  //   abort(): 通过 session.agent.abort() 或 AbortSignal 取消
-  //   healthCheck(): 返回 { healthy, latencyMs }
+// 动态导入 Pi Agent SDK（避免静态依赖导致打包失败）
+async function importPiSDK() {
+  try {
+    const piAgentRoot = getPiAgentRoot();
+    const sdkPath = `${piAgentRoot}/packages/coding-agent/src/core/sdk.ts`;
+    const mod = await import(sdkPath);
+    return mod;
+  } catch (err) {
+    throw new Error(
+      `Failed to import Pi Agent SDK. Ensure packages/pi-agent exists. Error: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+}
+
+function getPiAgentRoot(): string {
+  // 从 packages/backend/src/engine/adapters/ 向上推到 repo root，再进 packages/pi-agent
+  const repoRoot = new URL("../../../../../", import.meta.url).pathname.replace(/\/$/, "");
+  return `${repoRoot}/packages/pi-agent`;
+}
+
+// 超时默认值
+const DEFAULT_PROMPT_TIMEOUT_MS = 120_000; // 2 minutes
+const DEFAULT_COMPLETION_TIMEOUT_MS = 30_000; // 30s after last event
+
+export class PiAdapter implements IEngineAdapter {
+  readonly name: EngineProvider.PI = EngineProvider.PI;
+
+  private _available: boolean | null = null;
+  private _sdkModule: Awaited<ReturnType<typeof importPiSDK>> | null = null;
+  private _normalizer = new PiEventNormalizer();
+
+  // ─── IEngineAdapter 实现 ────────────────────────────────────────
 
   async initialize(): Promise<void> {
-    throw new Error("PiAdapter.initialize() not yet implemented");
+    // 验证 SDK 可导入
+    try {
+      this._sdkModule = await importPiSDK();
+      if (!this._sdkModule.createAgentSession) {
+        throw new Error("createAgentSession not found in Pi Agent SDK");
+      }
+      this._available = true;
+    } catch (err) {
+      this._available = false;
+      throw err;
+    }
   }
 
   async isAvailable(): Promise<boolean> {
-    return false;
+    if (this._available === null) {
+      try {
+        await this.initialize();
+      } catch {
+        return false;
+      }
+    }
+    return this._available ?? false;
   }
 
   async *streamPrompt(
-    options: Parameters<IEngineAdapter["streamPrompt"]>[0],
-  ): AsyncIterable<import("../../../shared-types/src/engine").NZiAgentEvent> {
-    throw new Error("PiAdapter.streamPrompt() not yet implemented");
+    options: PromptOptions,
+  ): AsyncIterable<NZiAgentEvent> {
+    const { createAgentSession } = this._sdkModule ?? (await importPiSDK());
+
+    const traceId = crypto.randomUUID();
+    const nodeId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const startTime = Date.now();
+
+    // 创建 Pi Agent Session
+    const session = await this.createPiSession(options);
+
+    // 收集事件
+    const events: NZiAgentEvent[] = [];
+    let agentEnded = false;
+    let lastEventTime = Date.now();
+
+    const ctx: NormalizerContext = {
+      provider: EngineProvider.PI,
+      sessionId: options.sessionId,
+      nodeId,
+      traceId,
+      parentEventId: options.parentEventId ?? null,
+    };
+
+    const unsubscribe = session.subscribe((piEvent: unknown) => {
+      lastEventTime = Date.now();
+      const nziEvent = this._normalizer.normalize(piEvent as PiNativeEvent, ctx);
+      if (nziEvent) {
+        events.push(nziEvent);
+      }
+
+      if (nziEvent?.eventType === AgentEventType.AGENT_END) {
+        agentEnded = true;
+      }
+    });
+
+    try {
+      // 触发 prompt
+      await session.prompt(options.content, {
+        expandPromptTemplates: true,
+      });
+    } catch (err) {
+      // prompt 本身可能失败（如无 API Key）
+      yield this._normalizer.createError(ctx, err);
+      unsubscribe();
+      return;
+    }
+
+    // 等待事件完成（agent_end 或超时）
+    const timeoutMs = DEFAULT_PROMPT_TIMEOUT_MS;
+    const pollInterval = 100;
+
+    while (!agentEnded) {
+      const elapsed = Date.now() - lastEventTime;
+      if (elapsed > DEFAULT_COMPLETION_TIMEOUT_MS) {
+        // 超过无新事件超时，认为完成
+        break;
+      }
+      if (Date.now() - startTime > timeoutMs) {
+        yield this._normalizer.createError(
+          ctx,
+          new Error(`Prompt timeout after ${timeoutMs}ms`),
+        );
+        break;
+      }
+      await new Promise((r) => setTimeout(r, pollInterval));
+    }
+
+    unsubscribe();
+
+    // 逐条 yield 事件
+    for (const event of events) {
+      yield event;
+    }
   }
 
-  async abort(_: string): Promise<void> {
-    throw new Error("PiAdapter.abort() not yet implemented");
+  async abort(sessionId: string): Promise<void> {
+    // Phase 1: PiAdapter 不维护 session registry
+    // Phase 2: 通过 sessionId 查找并调用 session.agent.abort()
+    // 当前为 no-op
+  }
+
+  async healthCheck(): Promise<{ healthy: boolean; latencyMs: number; detail?: string }> {
+    const start = Date.now();
+    try {
+      const available = await this.isAvailable();
+      return {
+        healthy: available,
+        latencyMs: Date.now() - start,
+        detail: available ? "Pi Agent SDK ready" : "Pi Agent SDK not available",
+      };
+    } catch (err) {
+      return {
+        healthy: false,
+        latencyMs: Date.now() - start,
+        detail: err instanceof Error ? err.message : "Unknown error",
+      };
+    }
+  }
+
+  // ─── 内部方法 ──────────────────────────────────────────────────
+
+  private async createPiSession(options: PromptOptions) {
+    const { createAgentSession } = this._sdkModule ?? (await importPiSDK());
+
+    // 最小化配置：只设 cwd，其他用默认值
+    // 不依赖 Pi Agent 原生 auth —— NZi 负责凭据管理
+    const result = await createAgentSession({
+      cwd: process.cwd(),
+      // Phase 1 不用任何工具，保持纯对话
+      noTools: "all",
+    });
+
+    return result.session;
   }
 }

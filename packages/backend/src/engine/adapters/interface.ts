@@ -1,3 +1,3 @@
-import type { IEngineAdapter } from "./interface";
+import type { IEngineAdapter } from "@nzi/shared-types";
 
 export { IEngineAdapter };
