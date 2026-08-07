@@ -9,6 +9,18 @@ dist/
 out/
 *.tsbuildinfo
 
+# Shared-types build artifacts (source is .ts only; emit goes to dist/)
+packages/shared-types/src/*.js
+packages/shared-types/src/*.d.ts
+packages/shared-types/src/*.d.ts.map
+
+# Screenshots (automated smoke-test output)
+screenshots/
+
+# Duplicate root-level Prisma migrations (canonical copy lives under
+# packages/backend/prisma/migrations/ — this directory is a leftover)
+migrations/
+
 # Environment
 .env
 .env.*
