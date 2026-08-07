@@ -42,7 +42,24 @@ await fastify.register(cors, {
 });
 
 // JWT 插件: secret 通过环境变量注入，满足类型系统必填约束
-await fastify.register(jwt, { secret: JWT_SECRET() });
+// H-2: 添加 iss / aud 声明，防止跨环境 token 重放
+await fastify.register(jwt, {
+  secret: JWT_SECRET(),
+  sign: {
+    iss: "nzi-web",
+    aud: "nzi-web-api",
+  },
+  verify: {
+    allowedIss: "nzi-web",
+    allowedAud: "nzi-web-api",
+  },
+});
+
+// M-1: 速率限制 — 防止登录/注册爆破
+await fastify.register(import("@fastify/rate-limit"), {
+  max: 100,
+  timeWindow: "1 minute",
+});
 // WebSocket 插件
 await fastify.register(websocket);
 

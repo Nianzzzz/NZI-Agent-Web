@@ -6,7 +6,19 @@
  */
 
 import type { FastifyRequest, FastifyReply } from "fastify";
+import { z } from "zod";
 import { AuthService } from "../services/auth.service.js";
+
+const RegisterSchema = z.object({
+  email: z.string().email("邮箱格式不正确").max(254, "邮箱过长"),
+  password: z.string().min(12, "密码至少需要 12 个字符").max(128, "密码过长"),
+  displayName: z.string().max(64, "昵称过长").optional(),
+});
+
+const LoginSchema = z.object({
+  email: z.string().email("邮箱格式不正确"),
+  password: z.string().min(1, "密码不能为空"),
+});
 
 export class AuthController {
   constructor(private authService: AuthService) {}
@@ -16,22 +28,19 @@ export class AuthController {
    * 注册新用户（自动创建 Tenant 并关联为 OWNER）
    */
   async register(req: FastifyRequest, reply: FastifyReply) {
-    const { email, password, displayName } = req.body as {
-      email: string;
-      password: string;
-      displayName?: string;
-    };
-
-    if (!email || !password) {
-      return reply.status(400).send({ error: "email 和 password 为必填" });
+    const parsed = RegisterSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: "请求参数校验失败",
+        details: parsed.error.issues.map((i) => ({
+          field: i.path.join("."),
+          message: i.message,
+        })),
+      });
     }
 
     try {
-      const result = await this.authService.register({
-        email,
-        password,
-        displayName,
-      });
+      const result = await this.authService.register(parsed.data);
       return reply.status(201).send(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : "注册失败";
@@ -47,17 +56,19 @@ export class AuthController {
    * 登录并获取 JWT Token
    */
   async login(req: FastifyRequest, reply: FastifyReply) {
-    const { email, password } = req.body as {
-      email: string;
-      password: string;
-    };
-
-    if (!email || !password) {
-      return reply.status(400).send({ error: "email 和 password 为必填" });
+    const parsed = LoginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: "请求参数校验失败",
+        details: parsed.error.issues.map((i) => ({
+          field: i.path.join("."),
+          message: i.message,
+        })),
+      });
     }
 
     try {
-      const result = await this.authService.login({ email, password });
+      const result = await this.authService.login(parsed.data);
       return reply.send(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : "登录失败";
