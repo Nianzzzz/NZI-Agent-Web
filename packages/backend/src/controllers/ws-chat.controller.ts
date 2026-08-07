@@ -287,6 +287,8 @@ export class WsChatController {
             toolOutput: event.eventData?.toolOutput as string | undefined,
             durationMs: event.durationMs,
             startedAt: prior?.startedAt,
+            // 保留 delta（思考/回答的累积文本），让前端可折叠展示
+            delta: prior?.delta,
           };
           nodes.set(event.nodeId, node);
           this.sendSocket(socket, {

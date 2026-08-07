@@ -179,6 +179,8 @@ export function useChatSocket({
     if (prev && prev.readyState !== WebSocket.CLOSED) {
       try { prev.close(1000, "Reconnecting"); } catch { /* ignore */ }
     }
+    // 注意：不在这里把 wsRef 置 null，让 disconnect cleanup 来处理，
+    // 避免 connect 的 close 回调里对 null wsRef 做操作。
 
     const url = new URL(WS_URL);
     url.pathname = "/api/ws/chat";
@@ -252,7 +254,12 @@ export function useChatSocket({
     clearReconnect();
     const ws = wsRef.current;
     if (ws) {
-      ws.close(1000, "Client disconnecting");
+      // 只在已连接时主动关闭；CONNECTING 状态的 socket 关闭会触发
+      // "WebSocket is closed before the connection is established" 错误，
+      // 让它自然走到 close 事件即可。
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        try { ws.close(1000, "Client disconnecting"); } catch { /* already closed */ }
+      }
       wsRef.current = null;
     }
     setWebSocket(null);
