@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import {
   Bot, Plus, MessageSquare, LogOut, User as UserIcon, Sparkles,
-  Trash2, Clock, Cpu, Inbox,
+  Trash2, Clock, Cpu, Inbox, BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -90,10 +90,18 @@ export default function DashboardPage() {
             <Cpu className="h-4 w-4" />
             <span>{sessions.length} session{sessions.length === 1 ? "" : "s"}</span>
           </div>
-          <Button onClick={handleNewSession} disabled={isLoading} className="gap-1.5">
-            <Plus className="h-4 w-4" />
-            New Session
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="ghost" size="sm" className="gap-1.5">
+              <Link href="/dashboard/engines">
+                <BookOpen className="h-4 w-4" />
+                Engine capabilities
+              </Link>
+            </Button>
+            <Button onClick={handleNewSession} disabled={isLoading} className="gap-1.5">
+              <Plus className="h-4 w-4" />
+              New Session
+            </Button>
+          </div>
         </div>
 
         {error && (
