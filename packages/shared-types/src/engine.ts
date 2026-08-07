@@ -92,6 +92,11 @@ export interface PromptOptions {
   tenantId: string;
   /** 上下文 */
   context?: PromptContext;
+  /**
+   * 本次请求的唯一 ID（由 WsChatController 生成）。
+   * 用于 Adapter 层注册 session → 支持 stop/abort 时按请求精确定位。
+   */
+  requestId: string;
 }
 
 // ─── Engine Health ────────────────────────────────────────────────
@@ -113,8 +118,8 @@ export interface IEngineAdapter {
   isAvailable(): Promise<boolean>;
   /** 发送 prompt 并流式返回事件 */
   streamPrompt(options: PromptOptions): AsyncIterable<NZiAgentEvent>;
-  /** 取消进行中的请求（可选） */
-  abort?(sessionId: string): Promise<void>;
+  /** 取消进行中的请求（可选）。sessionId 为 NZi 会话 ID，requestId 标识具体那次 prompt */
+  abort?(sessionId: string, requestId: string): Promise<void>;
   /** 健康检查（可选） */
   healthCheck?(): Promise<EngineHealth>;
 }

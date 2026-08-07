@@ -17,7 +17,7 @@
 import type { WebSocket } from "@fastify/websocket";
 import type { TokenPayload } from "../config/auth.config.js";
 import { SessionService } from "../services/session.service.js";
-import { routePromptByProvider } from "../engine/engine-bridge.js";
+import { routePromptByProvider, abortPrompt } from "../engine/engine-bridge.js";
 import { EngineProvider } from "@nzi/shared-types";
 import type { ClientMessage, ServerMessage, TimelineNode } from "../ws/chat.types.js";
 
@@ -207,6 +207,8 @@ export class WsChatController {
       const eventIterator = routePromptByProvider(provider, {
         sessionId,
         content: prompt,
+        tenantId: user.tenantId ?? "",
+        requestId,
       } as never);
 
       for await (const event of eventIterator) {
@@ -401,6 +403,10 @@ export class WsChatController {
 
     ctx.abortController.abort();
     const partialText = ctx.texts.join("");
+
+    // 通知 Adapter 层停止底层引擎的流式生成（Pi Agent session.abort()）。
+    // 即使 abortPrompt 失败，上层仍会走中断落库路径。
+    await abortPrompt(ctx.provider, ctx.sessionId, payload.requestId);
 
     this.sendSocket(socket, {
       type: "interrupted",

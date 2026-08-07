@@ -79,6 +79,12 @@ export class PiAdapter implements IEngineAdapter {
     return this._available ?? false;
   }
 
+  // ─── 活跃 session 注册表（按 requestId 索引） ────────────────
+  //
+  // 用于 abort(sessionId, requestId) 时精确定位到对应的 Pi Agent session。
+  // key = requestId（由 WsChatController 生成，每次 chat 请求唯一）
+  private _activeSessions = new Map<string, { session: unknown; unsubscribe: () => void }>();
+
   async *streamPrompt(
     options: PromptOptions,
   ): AsyncIterable<NZiAgentEvent> {
@@ -87,6 +93,7 @@ export class PiAdapter implements IEngineAdapter {
     const traceId = crypto.randomUUID();
     const nodeId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const startTime = Date.now();
+    const { requestId } = options;
 
     // 创建 Pi Agent Session
     const session = await this.createPiSession(options);
@@ -116,6 +123,9 @@ export class PiAdapter implements IEngineAdapter {
       }
     });
 
+    // 注册到活跃表，使 abort() 可按 requestId 找到这个 session
+    this._activeSessions.set(requestId, { session, unsubscribe });
+
     try {
       // 触发 prompt
       await session.prompt(options.content, {
@@ -124,15 +134,18 @@ export class PiAdapter implements IEngineAdapter {
     } catch (err) {
       // prompt 本身可能失败（如无 API Key）
       yield this._normalizer.createError(ctx, err);
-      unsubscribe();
       return;
     }
 
-    // 等待事件完成（agent_end 或超时）
+    // 等待事件完成（agent_end、被 abort 或超时）
     const timeoutMs = DEFAULT_PROMPT_TIMEOUT_MS;
     const pollInterval = 100;
 
     while (!agentEnded) {
+      // abort 被外部调用时，立即终止循环
+      if (!this._activeSessions.has(requestId)) {
+        break;
+      }
       const elapsed = Date.now() - lastEventTime;
       if (elapsed > DEFAULT_COMPLETION_TIMEOUT_MS) {
         // 超过无新事件超时，认为完成
@@ -148,18 +161,31 @@ export class PiAdapter implements IEngineAdapter {
       await new Promise((r) => setTimeout(r, pollInterval));
     }
 
-    unsubscribe();
-
     // 逐条 yield 事件
     for (const event of events) {
       yield event;
     }
   }
 
-  async abort(sessionId: string): Promise<void> {
-    // Phase 1: PiAdapter 不维护 session registry
-    // Phase 2: 通过 sessionId 查找并调用 session.agent.abort()
-    // 当前为 no-op
+  async abort(sessionId: string, requestId: string): Promise<void> {
+    // 按 requestId 找到对应的 Pi Agent session 并调用 session.abort()
+    const entry = this._activeSessions.get(requestId);
+    if (!entry) {
+      // 请求已结束或不存在，幂等忽略
+      return;
+    }
+    try {
+      const session = entry.session as { abort?: () => Promise<void> };
+      if (typeof session.abort === "function") {
+        await session.abort();
+      }
+    } catch {
+      // abort 失败不抛 —— 调用方只关心"已尝试中断"
+    } finally {
+      // 无论如何都清理订阅与注册表条目
+      try { entry.unsubscribe(); } catch { /* already unsubscribed */ }
+      this._activeSessions.delete(requestId);
+    }
   }
 
   async healthCheck(): Promise<{ healthy: boolean; latencyMs: number; detail?: string }> {

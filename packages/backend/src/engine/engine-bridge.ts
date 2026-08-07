@@ -136,6 +136,26 @@ export async function* routePromptByProvider(
   yield* routePrompt(provider, baseOptions);
 }
 
+/**
+ * 中断指定 provider 下正在进行的 prompt 请求。
+ *
+ * 委托给 Adapter 的 abort(sessionId, requestId)。Adapter 未实现 abort 或
+ * 找不到对应请求时静默忽略（幂等）。
+ */
+export async function abortPrompt(
+  provider: string,
+  sessionId: string,
+  requestId: string,
+): Promise<void> {
+  const adapter = registry.get(provider);
+  if (!adapter?.abort) return; // 未实现 abort（如 Mock）—— 由调用方的 AbortController 兜底
+  try {
+    await adapter.abort(sessionId, requestId);
+  } catch {
+    // abort 失败不向上传播；调用方仍会走中断落库路径
+  }
+}
+
 // ─── 健康检查 ─────────────────────────────────────────────────────
 
 export async function checkAllEngines(): Promise<Map<string, { healthy: boolean; latencyMs: number; detail?: string }>> {
