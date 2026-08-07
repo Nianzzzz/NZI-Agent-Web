@@ -15,6 +15,8 @@ export interface ChatMessagePayload {
   /** 引擎类型，默认 "PI" */
   agentType?: "PI" | "GROK";
   prompt: string;
+  /** 思维链级别（仅 PI 引擎有效，默认 "off"） */
+  thinkingLevel?: "off" | "low" | "medium" | "high";
 }
 
 /** 客户端 -> 服务端：停止生成 */

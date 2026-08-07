@@ -85,6 +85,13 @@ export class PiAdapter implements IEngineAdapter {
   // key = requestId（由 WsChatController 生成，每次 chat 请求唯一）
   private _activeSessions = new Map<string, { session: unknown; unsubscribe: () => void }>();
 
+  // ─── 多轮 session 注册表（按 NZi sessionId 索引） ─────────────
+  //
+  // Pi Agent 的 session 对象内部维护对话历史（session.agent.messages）。
+  // 复用同一个 session 即可实现多轮上下文，无需手动拼装历史消息。
+  // key = NZi sessionId
+  private _sessionsByNziSession = new Map<string, { session: unknown; unsubscribe: () => void; thinkingLevel?: string }>();
+
   async *streamPrompt(
     options: PromptOptions,
   ): AsyncIterable<NZiAgentEvent> {
@@ -93,10 +100,32 @@ export class PiAdapter implements IEngineAdapter {
     const traceId = crypto.randomUUID();
     const nodeId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const startTime = Date.now();
-    const { requestId } = options;
+    const { requestId, sessionId } = options;
 
-    // 创建 Pi Agent Session
-    const session = await this.createPiSession(options);
+    // 多轮上下文：复用同一 NZi sessionId 对应的 Pi session。
+    // 若 thinkingLevel 发生变化则重建 session（thinking level 在 session 创建时确定）。
+    const requestedThinkingLevel = options.context?.thinkingLevel ?? "off";
+    const existing = this._sessionsByNziSession.get(sessionId);
+    const needNewSession = !existing || existing.thinkingLevel !== requestedThinkingLevel;
+
+    let session: unknown;
+    let unsubscribe: () => void;
+    let reused = false;
+
+    if (needNewSession) {
+      // 清理旧 session（如有）
+      if (existing) {
+        try { existing.unsubscribe(); } catch { /* already closed */ }
+      }
+      session = await this.createPiSession(options);
+      // 空订阅：只用于在 abort 时能安全 unsubscribe
+      unsubscribe = (session as { subscribe?: (fn: (e: unknown) => void) => () => void }).subscribe?.(() => {}) ?? (() => {});
+    } else {
+      session = existing.session;
+      reused = true;
+      // 复用旧订阅引用（会被下面的新订阅替换）
+      unsubscribe = existing.unsubscribe;
+    }
 
     // 收集事件
     const events: NZiAgentEvent[] = [];
@@ -105,13 +134,14 @@ export class PiAdapter implements IEngineAdapter {
 
     const ctx: NormalizerContext = {
       provider: EngineProvider.PI,
-      sessionId: options.sessionId,
+      sessionId,
       nodeId,
       traceId,
       parentEventId: options.parentEventId ?? null,
     };
 
-    const unsubscribe = session.subscribe((piEvent: unknown) => {
+    // 注册事件监听（收集 + 检测 agent_end）
+    const newUnsubscribe = (session as { subscribe: (fn: (e: unknown) => void) => () => void }).subscribe((piEvent: unknown) => {
       lastEventTime = Date.now();
       const nziEvent = this._normalizer.normalize(piEvent as PiNativeEvent, ctx);
       if (nziEvent) {
@@ -122,13 +152,21 @@ export class PiAdapter implements IEngineAdapter {
         agentEnded = true;
       }
     });
+    unsubscribe = newUnsubscribe;
 
-    // 注册到活跃表，使 abort() 可按 requestId 找到这个 session
+    // 注册到活跃表（abort 用）+ 多轮表（session 复用用）
     this._activeSessions.set(requestId, { session, unsubscribe });
+    if (needNewSession) {
+      this._sessionsByNziSession.set(sessionId, { session, unsubscribe, thinkingLevel: requestedThinkingLevel });
+    } else {
+      // 更新订阅引用（因为每次 streamPrompt 都会创建新订阅）
+      const entry = this._sessionsByNziSession.get(sessionId);
+      if (entry) entry.unsubscribe = unsubscribe;
+    }
 
     try {
       // 触发 prompt
-      await session.prompt(options.content, {
+      await (session as { prompt: (text: string, opts?: unknown) => Promise<void> }).prompt(options.content, {
         expandPromptTemplates: true,
       });
     } catch (err) {
@@ -182,7 +220,7 @@ export class PiAdapter implements IEngineAdapter {
     } catch {
       // abort 失败不抛 —— 调用方只关心"已尝试中断"
     } finally {
-      // 无论如何都清理订阅与注册表条目
+      // 无论如何都清理活跃注册表条目（但保留多轮 session 以便后续继续对话）
       try { entry.unsubscribe(); } catch { /* already unsubscribed */ }
       this._activeSessions.delete(requestId);
     }
@@ -217,6 +255,8 @@ export class PiAdapter implements IEngineAdapter {
       cwd: process.cwd(),
       // Phase 1 不用任何工具，保持纯对话
       noTools: "all",
+      // 思维链级别：由 NZi 用户在会话中控制（默认 off）
+      thinkingLevel: options.context?.thinkingLevel ?? undefined,
     });
 
     return result.session;

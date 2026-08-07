@@ -16,7 +16,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Bot, Cpu, Send, Square, Loader2,
-  Sparkles, AlertCircle, CheckCircle2, MessageSquare, User as UserIcon,
+  Sparkles, AlertCircle, CheckCircle2, MessageSquare, User as UserIcon, Brain,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -127,6 +127,7 @@ export default function SessionChatPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [draft, setDraft] = useState("");
+  const [thinkingLevel, setThinkingLevel] = useState<"off" | "low" | "medium" | "high">("off");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const historyLoadedRef = useRef(false);
 
@@ -207,9 +208,9 @@ export default function SessionChatPage() {
   const handleSend = useCallback(() => {
     const text = draft.trim();
     if (!text || isGenerating) return;
-    sendChat(text, (session?.engine ?? "PI") as "PI" | "GROK");
+    sendChat(text, (session?.engine ?? "PI") as "PI" | "GROK", thinkingLevel);
     setDraft("");
-  }, [draft, isGenerating, sendChat, session?.engine]);
+  }, [draft, isGenerating, sendChat, session?.engine, thinkingLevel]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -278,6 +279,12 @@ export default function SessionChatPage() {
               </span>
               <span>·</span>
               <ConnectionPill status={connectionStatus} />
+              {engine === "PI" && (
+                <>
+                  <span>·</span>
+                  <ThinkingLevelPill value={thinkingLevel} onChange={setThinkingLevel} disabled={isGenerating} />
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -368,6 +375,47 @@ export default function SessionChatPage() {
         </div>
       </footer>
     </div>
+  );
+}
+
+function ThinkingLevelPill({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: "off" | "low" | "medium" | "high";
+  onChange: (v: "off" | "low" | "medium" | "high") => void;
+  disabled?: boolean;
+}) {
+  const OPTIONS: { key: "off" | "low" | "medium" | "high"; label: string; color: string }[] = [
+    { key: "off", label: "思考关", color: "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
+    { key: "low", label: "低", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" },
+    { key: "medium", label: "中", color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" },
+    { key: "high", label: "高", color: "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-300" },
+  ];
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Brain className="h-3 w-3 text-muted-foreground" />
+      {OPTIONS.map((opt) => (
+        <button
+          key={opt.key}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(opt.key)}
+          className={cn(
+            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition",
+            opt.color,
+            value === opt.key
+              ? "ring-2 ring-offset-1 ring-blue-400 dark:ring-offset-slate-950"
+              : "opacity-60 hover:opacity-100",
+            disabled && "pointer-events-none opacity-40",
+          )}
+          title={`思维链级别：${opt.label}`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </span>
   );
 }
 

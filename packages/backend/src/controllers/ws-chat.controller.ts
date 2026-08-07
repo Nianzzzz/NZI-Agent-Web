@@ -145,13 +145,13 @@ export class WsChatController {
   private async handleChat(
     socket: WebSocket,
     user: TokenPayload,
-    payload: { sessionId: string; agentType?: "PI" | "GROK"; prompt: string },
+    payload: { sessionId: string; agentType?: "PI" | "GROK"; prompt: string; thinkingLevel?: "off" | "low" | "medium" | "high" },
     activeRequests: Map<
       string,
       RequestContext & { sessionId: string; rootEventId?: string; provider: "PI" | "GROK" }
     >,
   ) {
-    const { sessionId, prompt, agentType = "PI" } = payload;
+    const { sessionId, prompt, agentType = "PI", thinkingLevel = "off" } = payload;
     const provider = EngineProvider[agentType as keyof typeof EngineProvider] ?? EngineProvider.PI;
 
     // 唯一请求 ID，前端 stop 时传入此 ID 中断
@@ -209,6 +209,9 @@ export class WsChatController {
         content: prompt,
         tenantId: user.tenantId ?? "",
         requestId,
+        context: {
+          thinkingLevel: thinkingLevel as "off" | "low" | "medium" | "high",
+        },
       } as never);
 
       for await (const event of eventIterator) {
