@@ -1,148 +1,243 @@
 /**
  * NZi Agent Web — AgentTimeline
  *
- * T010: 在 assistant 消息气泡下渲染 Agent Loop Timeline。
- *
- * 每个 TimelineNode 是可折叠的卡片，包含：
- * - thinking（灰底 / 可折叠）：内部推理过程
- * - tool（黄色卡片）：工具名 + 参数 + 结果
- * - answer（绿色文本）：最终回答
- *
- * 节点状态：
- * - running → 脉冲动画 + 标题
- * - done → 勾选 + 内容展示
- * - error → 红色 icon + 错误消息
+ * T010 + Phase 2 polish:
+ * - 答案（answer）节点永远展开显示，是消息的核心内容
+ * - 思考（thinking）和工具（tool）节点放在底部作为"推理细节"，
+ *   默认折叠成一行摘要（思考 1 行 / 工具名+时长），点击展开
+ * - 思考节点在 streaming 时也可见（实时显示已生成的内容）
  */
 
 "use client";
 
 import {
-  Brain, Wrench, MessageSquare, Loader2, CheckCircle2, XCircle,
-  ChevronDown, ChevronRight, Clock, Timer,
+  Brain, Wrench, Loader2, CheckCircle2, XCircle,
+  ChevronDown, ChevronRight, Timer, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TimelineNode } from "@/types/chat.types";
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 
 export interface AgentTimelineProps {
   nodes: TimelineNode[];
-  /** 引擎渐变色 class（用于色调区分） */
+  /** 引擎渐变色 class */
   engineGradient: string;
 }
 
-const PHASE_LABEL: Record<TimelineNode["type"], string> = {
-  thinking: "思考",
-  tool: "工具",
-  answer: "回答",
-};
-
-const PHASE_ICON: Record<TimelineNode["type"], typeof Brain> = {
-  thinking: Brain,
-  tool: Wrench,
-  answer: MessageSquare,
-};
+const THINKING_PREVIEW_MAX = 80;  // 折叠时显示前 80 字
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function NodeCard({
+/** 节点摘要（一行） */
+function nodeSummary(node: TimelineNode): string {
+  if (node.type === "tool") {
+    return node.title ?? "工具调用";
+  }
+  // thinking
+  const first = (node.delta ?? "").replace(/\s+/g, " ").trim();
+  if (!first) return "思考中…";
+  return first.length > THINKING_PREVIEW_MAX
+    ? first.slice(0, THINKING_PREVIEW_MAX) + "…"
+    : first;
+}
+
+// ─── 思考/工具折叠节点 ──────────────────────────────────────────
+
+function CollapsibleNode({
   node,
-  engineGradient,
+  defaultExpanded = false,
 }: {
   node: TimelineNode;
-  engineGradient: string;
+  defaultExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const isRunning = node.status === "running";
-  const isDone = node.status === "done";
   const isError = node.status === "error";
-  const Icon = PHASE_ICON[node.type];
+  // running 状态自动展开
+  const [expanded, setExpanded] = useState(isRunning || defaultExpanded);
 
-  const bgClass = useMemo(() => {
-    if (node.type === "thinking") return "bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-800";
-    if (node.type === "tool") return "bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800/40";
-    return "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800/40";
-  }, [node.type]);
+  useEffect(() => {
+    if (isRunning) setExpanded(true);
+  }, [isRunning]);
 
-  const hasContent = !!node.delta;
-  const canExpand = hasContent && (isDone || isError);
+  const Icon = node.type === "tool" ? Wrench : Brain;
+  const labelColor = node.type === "tool"
+    ? "text-amber-700 dark:text-amber-300"
+    : "text-slate-600 dark:text-slate-300";
+  const borderColor = node.type === "tool"
+    ? "border-amber-200/60 dark:border-amber-800/30"
+    : "border-slate-200/60 dark:border-slate-700/40";
+  const bgColor = node.type === "tool"
+    ? "bg-amber-50/40 dark:bg-amber-950/10"
+    : "bg-slate-50/60 dark:bg-slate-900/30";
 
   return (
-    <div className={cn("rounded-lg border px-3 py-2 text-sm transition-all", bgClass)}>
-      <div className="flex items-center gap-2">
-        {/* Status icon */}
-        {isRunning && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />}
-        {isDone && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />}
-        {isError && <XCircle className="h-3.5 w-3.5 text-red-500" />}
+    <div className={cn("rounded-md border", borderColor, bgColor)}>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-[11px] hover:bg-black/[0.02] dark:hover:bg-white/[0.02]"
+      >
+        {/* 状态指示 */}
+        {isRunning ? (
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-blue-500" />
+        ) : isError ? (
+          <XCircle className="h-3 w-3 shrink-0 text-red-500" />
+        ) : (
+          <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500" />
+        )}
 
-        {/* Phase icon */}
-        <Icon className="h-3.5 w-3.5 text-slate-500" />
-
-        {/* Title */}
-        <span className="font-medium text-slate-700 dark:text-slate-200">
-          {node.title ?? PHASE_LABEL[node.type]}
+        {/* 阶段图标 + 标签 */}
+        <Icon className={cn("h-3 w-3 shrink-0", labelColor)} />
+        <span className={cn("shrink-0 font-medium", labelColor)}>
+          {node.type === "tool" ? "工具" : "思考"}
         </span>
 
-        {/* Duration */}
-        {node.durationMs != null && (
-          <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
-            <Timer className="h-3 w-3" />
+        {/* 摘要 */}
+        <span className="min-w-0 flex-1 truncate text-slate-500 dark:text-slate-400">
+          {nodeSummary(node)}
+        </span>
+
+        {/* 时长 */}
+        {node.durationMs != null && !isRunning && (
+          <span className="inline-flex shrink-0 items-center gap-0.5 text-slate-400">
+            <Timer className="h-2.5 w-2.5" />
             {formatDuration(node.durationMs)}
           </span>
         )}
 
-        {/* Expand toggle */}
-        {canExpand && (
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="ml-auto shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-            aria-label={expanded ? "折叠" : "展开"}
-          >
-            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </button>
-        )}
-      </div>
+        {/* 展开/折叠 */}
+        <span className="shrink-0 text-slate-400">
+          {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        </span>
+      </button>
 
-      {/* Tool input hint */}
-      {node.type === "tool" && node.toolInput && (
-        <div className="mt-1.5 text-[11px] text-slate-500">
-          <span className="font-mono bg-slate-200/60 dark:bg-slate-800/60 rounded px-1 py-0.5">
-            {JSON.stringify(node.toolInput, null, 0).slice(0, 80)}
-          </span>
-        </div>
-      )}
+      {expanded && (
+        <div className="border-t border-current/10 px-2.5 py-2 text-xs">
+          {/* 工具节点：输入 + 输出 */}
+          {node.type === "tool" && (
+            <>
+              {node.toolInput && (
+                <div className="mb-1.5">
+                  <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    输入
+                  </div>
+                  <pre className="overflow-x-auto rounded bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
+                    {JSON.stringify(node.toolInput, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {node.toolOutput && (
+                <div>
+                  <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    输出
+                  </div>
+                  <div className="whitespace-pre-wrap break-words rounded bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
+                    {node.toolOutput}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
 
-      {/* Tool output */}
-      {node.type === "tool" && node.toolOutput && isDone && (
-        <div className="mt-1.5 text-[11px] text-slate-600 dark:text-slate-400 whitespace-pre-wrap break-words">
-          {node.toolOutput}
-        </div>
-      )}
-
-      {/* Expanded content */}
-      {expanded && node.delta && (
-        <div className="mt-2 border-t border-slate-200/60 pt-2 text-xs whitespace-pre-wrap break-words text-slate-600 dark:text-slate-400">
-          {node.delta}
+          {/* 思考节点：完整内容 */}
+          {node.type === "thinking" && node.delta && (
+            <div className="whitespace-pre-wrap break-words text-slate-600 dark:text-slate-300">
+              {node.delta}
+            </div>
+          )}
+          {node.type === "thinking" && isRunning && !node.delta && (
+            <div className="flex items-center gap-1.5 text-slate-400">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              正在思考…
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
+// ─── 答案节点（永远展开，置顶） ─────────────────────────────────
+
+function AnswerNode({
+  node,
+  isStreaming,
+}: {
+  node: TimelineNode;
+  isStreaming: boolean;
+}) {
+  const hasContent = !!node.delta;
+  return (
+    <div className="rounded-md border border-emerald-200/60 bg-emerald-50/30 px-3 py-2.5 dark:border-emerald-800/30 dark:bg-emerald-950/10">
+      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+        {isStreaming ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : hasContent ? (
+          <CheckCircle2 className="h-3 w-3" />
+        ) : (
+          <Sparkles className="h-3 w-3" />
+        )}
+        回答
+        {node.durationMs != null && !isStreaming && (
+          <span className="ml-auto inline-flex items-center gap-0.5 text-[10px] font-normal normal-case tracking-normal text-emerald-600/70">
+            <Timer className="h-2.5 w-2.5" />
+            {formatDuration(node.durationMs)}
+          </span>
+        )}
+      </div>
+      {hasContent ? (
+        <div className="whitespace-pre-wrap break-words text-[14px] leading-relaxed text-slate-800 dark:text-slate-100">
+          {node.delta}
+        </div>
+      ) : (
+        <div className="text-[14px] text-slate-400">等待回答…</div>
+      )}
+    </div>
+  );
+}
+
+// ─── 顶层渲染 ───────────────────────────────────────────────────
+
 export default function AgentTimeline({
   nodes,
-  engineGradient,
 }: AgentTimelineProps) {
   if (nodes.length === 0) return null;
 
+  const answerNode = nodes.find((n) => n.type === "answer");
+  const detailNodes = nodes.filter((n) => n.type !== "answer");
+  const isStreaming = !!answerNode && answerNode.status === "running";
+
   return (
-    <div className="mt-3 space-y-1.5 border-t border-slate-200/40 pt-2 dark:border-slate-800/40">
-      {nodes.map((node) => (
-        <NodeCard key={node.id} node={node} engineGradient={engineGradient} />
-      ))}
+    <div className="mt-3 space-y-2 border-t border-slate-200/40 pt-2.5 dark:border-slate-800/40">
+      {/* 答案置顶，最显眼 */}
+      {answerNode && (
+        <AnswerNode node={answerNode} isStreaming={isStreaming} />
+      )}
+
+      {/* 思考/工具放底部，作为"推理细节" */}
+      {detailNodes.length > 0 && (
+        <details className="group" open={isStreaming}>
+          <summary className="flex cursor-pointer select-none items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+            <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+            <span>查看推理过程</span>
+            <span className="text-[10px] text-slate-400">
+              ({detailNodes.length} 步)
+            </span>
+          </summary>
+          <div className="mt-1.5 space-y-1">
+            {detailNodes.map((node) => (
+              <CollapsibleNode
+                key={node.id}
+                node={node}
+                defaultExpanded={isStreaming}
+              />
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }
