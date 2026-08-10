@@ -81,6 +81,7 @@ export async function initializeAdapters(
   for (const adapter of realAdapters) {
     try {
       await registerAdapter(adapter);
+      console.log(`[engine] ✓ ${adapter.name} adapter registered`);
     } catch (err) {
       console.warn(
         `[engine] Failed to initialize ${adapter.name}:`,
