@@ -263,7 +263,10 @@ export class WsChatController {
             continue;
           }
           if (event.content) {
-            texts.push(event.content);
+            // 只把 answer 节点的内容计入最终落库文本；thinking/tool 只保留在 nodes 中
+            if (nodeKind === "answer") {
+              texts.push(event.content);
+            }
             const existing = nodes.get(event.nodeId);
             if (existing) {
               existing.delta = (existing.delta ?? "") + event.content;

@@ -66,7 +66,7 @@ await fastify.register(import("@fastify/rate-limit"), {
 await fastify.register(websocket, {
   errorHandler: (error, socket, request) => {
     console.error("[ws] errorHandler:", error.message, "url:", request?.url);
-    socket.end();
+    socket.close();
   },
 });
 // 监听 upgrade 事件用于调试
