@@ -5,6 +5,7 @@
  * 不直接处理 HTTP 请求，由 Controller 调用。
  */
 
+import crypto from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import { hashPassword, verifyPassword, computeJwtExpiry } from "../config/auth.config.js";
 
@@ -35,10 +36,9 @@ export class AuthService {
     private prisma: PrismaClient,
     private signToken: (
       payload: Record<string, unknown>,
-      expiresIn?: number,
+      expiresIn?: string | number,
     ) => Promise<string>,
   ) {}
-
   /**
    * 注册新用户。
    * - 自动创建默认 Tenant
@@ -88,6 +88,7 @@ export class AuthService {
         email: result.user.email,
         tenantId: result.tenant.id,
         role: result.member.role,
+        jti: crypto.randomUUID(),
       },
       computeJwtExpiry(result.member.role),
     );
@@ -137,6 +138,7 @@ export class AuthService {
         email: user.email,
         tenantId: membership.tenantId,
         role: membership.role,
+        jti: crypto.randomUUID(),
       },
       computeJwtExpiry(membership.role),
     );

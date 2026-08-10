@@ -16,11 +16,14 @@ import { SessionService } from "../services/session.service.js";
 
 const authRoutes: FastifyPluginAsync = async (fastify) => {
   // 包装 sign 方法，统一推断为 (payload, expiresIn?) => Promise<string>
-  const signToken = async (payload: unknown, expiresIn?: number) =>
-    fastify.jwt.sign(payload as never, expiresIn ? { expiresIn } : undefined);
+  const signToken = async (
+    payload: unknown,
+    expiresIn?: string | number,
+  ) => fastify.jwt.sign(payload as never, expiresIn ? { expiresIn } : undefined);
 
   const authService = new AuthService(fastify.prisma, signToken);
-  const controller = new AuthController(authService);
+  const redis = (fastify as unknown as { redis?: import("ioredis").Redis }).redis;
+  const controller = new AuthController(authService, redis);
 
   fastify.post(
     "/api/auth/register",
@@ -33,6 +36,10 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get(
     "/api/auth/me",
     async (req, reply) => controller.me(req as never, reply as never),
+  );
+  fastify.post(
+    "/api/auth/logout",
+    async (req, reply) => controller.logout(req as never, reply as never),
   );
 };
 

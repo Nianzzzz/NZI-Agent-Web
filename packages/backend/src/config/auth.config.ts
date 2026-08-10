@@ -22,16 +22,14 @@ export const JWT_EXPIRY = () => process.env.JWT_EXPIRY ?? "7d";
 /**
  * 根据 role 决定 JWT exp 秒数
  *
- * - ADMIN: 9999-12-31 (253402300799 ≈ 270 年后) — 用作永不过期
+ * - ADMIN: 30d — 不再使用永不过期的 token，统一通过 jti 撤销机制控制
  * - 其他: undefined (沿用 fastify.jwt 默认 7d)
- *
- * 真正撤销时直接删 DB 用户
  */
-export function computeJwtExpiry(role: string): number | undefined {
+export function computeJwtExpiry(role: string): string {
   if (role.toUpperCase() === "ADMIN") {
-    return 253402300799;
+    return "30d";
   }
-  return undefined;
+  return JWT_EXPIRY();
 }
 
 // ─── 密码哈希 ─────────────────────────────────────────────────────
@@ -47,6 +45,7 @@ export interface TokenPayload {
   email: string;
   tenantId: string;
   role: string;
+  jti: string;
   iat: number;
   exp: number;
 }

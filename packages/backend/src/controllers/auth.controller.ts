@@ -1,11 +1,12 @@
 /**
  * Auth Controller
  *
- * 职责：处理注册、登录、获取当前用户信息的 HTTP 请求。
+ * 职责：处理注册、登录、获取当前用户信息、登出的 HTTP 请求。
  * 不包含业务逻辑，全部委托给 AuthService。
  */
 
 import type { FastifyRequest, FastifyReply } from "fastify";
+import type { Redis } from "ioredis";
 import { z } from "zod";
 import { AuthService } from "../services/auth.service.js";
 
@@ -21,7 +22,10 @@ const LoginSchema = z.object({
 });
 
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private redis?: Redis,
+  ) {}
 
   /**
    * POST /api/auth/register
@@ -93,5 +97,26 @@ export class AuthController {
       tenantId: user.tenantId,
       role: user.role,
     });
+  }
+
+  /**
+   * POST /api/auth/logout
+   * 将当前 Token 加入撤销黑名单（Redis），TTL = exp - now
+   * （需通过 authHook 验证 JWT）
+   */
+  async logout(req: FastifyRequest, reply: FastifyReply) {
+    const payload = req.user as { sub: string; email: string; jti: string; exp: number } | undefined;
+    if (!payload?.jti) {
+      return reply.status(401).send({ error: "未登录或登录已过期" });
+    }
+
+    if (!this.redis) {
+      // 无 Redis：无法撤销，仅提示客户端清除本地 token
+      return reply.send({ message: "已登出（无 Redis，请客户端清除 token）" });
+    }
+
+    const ttl = Math.max(payload.exp * 1000 - Date.now(), 0);
+    await this.redis.set(`revoked:${payload.jti}`, "1", "PX", ttl || 1);
+    return reply.send({ message: "已登出" });
   }
 }

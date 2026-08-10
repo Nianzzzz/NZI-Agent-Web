@@ -2,10 +2,15 @@
  * T004 Phase 2 — WebSocket Chat Controller
  *
  * 职责：
- * - WS 连接鉴权（Query 参数传递 JWT）
+ * - WS 连接鉴权（Sec-WebSocket-Protocol 子协议头传递 JWT）
  * - 单向事件流：客户端只发 chat/stop，服务端只发 status/chunk/done/error/interrupted
  * - 内存拼接流式文本，避免逐 chunk 写库
  * - 支持 AbortController 中断与断线续断（残卷入库）
+ *
+ * 安全：
+ * - 入站消息经 Zod 校验（prompt ≤ 10k 字符，agentType/thinkingLevel 枚举限制）
+ * - 每 socket 独立速率计数器（60s 内 ≤ 10 条 chat、≤ 30 条 stop）
+ * - maxPayload 由插件层限制为 1 MiB
  *
  * 流控策略：
  * - 收到 chat：先写用户提问（USER 消息），启动流式生成
@@ -19,7 +24,9 @@ import type { TokenPayload } from "../config/auth.config.js";
 import { SessionService } from "../services/session.service.js";
 import { routePromptByProvider, abortPrompt } from "../engine/engine-bridge.js";
 import { EngineProvider } from "@nzi/shared-types";
-import type { ClientMessage, ServerMessage, TimelineNode } from "../ws/chat.types.js";
+import type { TimelineNode } from "../ws/chat.types.js";
+import { validateClientMessage } from "../ws/chat.types.js";
+import type { ServerMessage } from "../ws/chat.types.js";
 
 interface RequestContext {
   abortController: AbortController;
@@ -28,6 +35,18 @@ interface RequestContext {
   /** Agent Loop Timeline 节点（按引擎 nodeId 索引） */
   nodes: Map<string, TimelineNode>;
 }
+
+/** 每 socket 的速率限制计数器 */
+interface SocketRateLimit {
+  chatCount: number;
+  stopCount: number;
+  windowStart: number;
+}
+
+/** 速率限制阈值 */
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_CHAT = 10;
+const RATE_LIMIT_MAX_STOP = 30;
 
 export class WsChatController {
   constructor(
@@ -38,21 +57,28 @@ export class WsChatController {
   /**
    * WebSocket 连接处理器
    *
-   * 鉴权：通过 query ?token=<JWT> 传递
+   * 鉴权：通过 Sec-WebSocket-Protocol 子协议头传递 JWT
+   * （避免 token 出现在 URL query 中被日志记录）
    * 协议：客户端发送 JSON { type: "chat" | "stop", payload: {...} }
    */
   wsHandler(
     socket: WebSocket,
     request: {
       url: string;
+      headers?: Record<string, string | undefined>;
       user?: TokenPayload;
     },
   ) {
     // ─── 1. 鉴权 ─────────────────────────────────────────────────
-    // WS 路由不走全局 onRequest 钩子（避免与 HTTP Authorization 头耦合）
-    // 这里直接从 URL query 解析 token 并用构造注入的 verify 验证
-    const url = new URL(request.url, "http://localhost");
-    const token = url.searchParams.get("token");
+    // 优先从 Sec-WebSocket-Protocol 头读取 token（安全方式）
+    // 回退到 query ?token=（兼容旧客户端）
+    const protocol = request.headers?.["sec-websocket-protocol"] ?? "";
+    let token = protocol.trim() || "";
+    if (!token) {
+      const url = new URL(request.url ?? "", "http://localhost");
+      token = url.searchParams.get("token") ?? "";
+    }
+
     if (!token) {
       socket.close(4001, "Missing token");
       return;
@@ -83,6 +109,29 @@ export class WsChatController {
       }
     >();
 
+    // 每 socket 独立的速率限制状态
+    const rateLimit: SocketRateLimit = {
+      chatCount: 0,
+      stopCount: 0,
+      windowStart: Date.now(),
+    };
+
+    /** 检查速率限制，超限返回 true */
+    const checkRateLimit = (type: "chat" | "stop"): boolean => {
+      const now = Date.now();
+      if (now - rateLimit.windowStart > RATE_LIMIT_WINDOW_MS) {
+        rateLimit.chatCount = 0;
+        rateLimit.stopCount = 0;
+        rateLimit.windowStart = now;
+      }
+      if (type === "chat") {
+        rateLimit.chatCount += 1;
+        return rateLimit.chatCount > RATE_LIMIT_MAX_CHAT;
+      }
+      rateLimit.stopCount += 1;
+      return rateLimit.stopCount > RATE_LIMIT_MAX_STOP;
+    };
+
     // ─── 3. 消息处理 ─────────────────────────────────────────────
     socket.on("message", async (raw: unknown) => {
       try {
@@ -95,8 +144,23 @@ export class WsChatController {
           return;
         }
 
-        const message = JSON.parse(raw as string) as ClientMessage;
-        const { type, payload } = message;
+        // Zod 校验入站消息
+        const validated = validateClientMessage(raw);
+        if ("error" in validated) {
+          this.sendSocket(socket, {
+            type: "error",
+            payload: { message: validated.error },
+          } satisfies ServerMessage);
+          return;
+        }
+
+        const { type, payload } = validated;
+
+        // 速率限制检查
+        if (checkRateLimit(type)) {
+          socket.close(4002, "Rate limit exceeded");
+          return;
+        }
 
         if (type === "chat") {
           await this.handleChat(
@@ -106,6 +170,7 @@ export class WsChatController {
               sessionId: string;
               agentType?: "PI" | "GROK";
               prompt: string;
+              thinkingLevel?: "off" | "low" | "medium" | "high";
             },
             activeRequests,
           );
@@ -115,11 +180,6 @@ export class WsChatController {
             payload as { requestId: string },
             activeRequests,
           );
-        } else {
-          this.sendSocket(socket, {
-            type: "error",
-            payload: { message: `Unknown message type: ${type}` },
-          } satisfies ServerMessage);
         }
       } catch {
         this.sendSocket(socket, {

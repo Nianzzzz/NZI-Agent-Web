@@ -6,6 +6,8 @@
  * - stop：主动停止生成
  */
 
+import { z } from "zod";
+
 /** 客户端 -> 服务端的消息类型 */
 export type ClientMessageType = "chat" | "stop";
 
@@ -132,4 +134,64 @@ export interface ServerMessage {
     | ServerDonePayload
     | ServerErrorPayload
     | ServerInterruptedPayload;
+}
+
+// ─── Zod 校验 Schema ──────────────────────────────────────────────
+
+/** 入站 chat 消息 payload：限制 prompt 长度、枚举值 */
+export const ChatPayloadSchema = z.object({
+  sessionId: z.string().min(1, "sessionId 不能为空"),
+  agentType: z.enum(["PI", "GROK"]).optional().default("PI"),
+  prompt: z
+    .string()
+    .min(1, "prompt 不能为空")
+    .max(10_000, "prompt 不能超过 10,000 个字符"),
+  thinkingLevel: z
+    .enum(["off", "low", "medium", "high"])
+    .optional()
+    .default("off"),
+});
+
+/** 入站 stop 消息 payload */
+export const StopPayloadSchema = z.object({
+  requestId: z.string().min(1, "requestId 不能为空"),
+});
+
+/** 完整的入站消息校验 */
+export function validateClientMessage(
+  raw: unknown,
+): { type: "chat"; payload: z.infer<typeof ChatPayloadSchema> }
+  | { type: "stop"; payload: z.infer<typeof StopPayloadSchema> }
+  | { error: string } {
+  if (typeof raw !== "object" || raw === null) {
+    return { error: "消息格式不正确" };
+  }
+  const obj = raw as Record<string, unknown>;
+  const type = obj.type;
+
+  if (type === "chat") {
+    const result = ChatPayloadSchema.safeParse(obj.payload);
+    if (!result.success) {
+      return {
+        error: result.error.issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join("; "),
+      };
+    }
+    return { type: "chat", payload: result.data };
+  }
+
+  if (type === "stop") {
+    const result = StopPayloadSchema.safeParse(obj.payload);
+    if (!result.success) {
+      return {
+        error: result.error.issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join("; "),
+      };
+    }
+    return { type: "stop", payload: result.data };
+  }
+
+  return { error: `未知消息类型: ${String(type)}` };
 }

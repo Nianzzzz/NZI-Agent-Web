@@ -12,6 +12,8 @@ import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import jwt from "@fastify/jwt";
 import websocket from "@fastify/websocket";
+import redis from "@fastify/redis";
+import Redis from "ioredis";
 import { PrismaClient } from "@prisma/client";
 import { JWT_SECRET } from "./config/auth.config.js";
 import { authRoutes, sessionRoutes } from "./routes/index.js";
@@ -55,23 +57,47 @@ await fastify.register(jwt, {
   },
 });
 
-// M-1: 速率限制 — 防止登录/注册爆破
-// 跳过 WebSocket 路由（WS 升级请求是高频 GET，不应计入限流）
+// ─── Redis（JWT 撤销黑名单 + 会话级速率限制）─────────────────────
+// 生产必须设置 REDIS_URL；开发环境无 Redis 时静默降级（拒绝撤销，允许所有 WS）
+const redisClient = process.env.REDIS_URL
+  ? new Redis(process.env.REDIS_URL, {
+      maxRetriesPerRequest: 3,
+      enableReadyCheck: true,
+      lazyConnect: true,
+    })
+  : null;
+
+if (redisClient) {
+  await fastify.register(redis, { client: redisClient });
+  redisClient.on("error", (err) => {
+    fastify.log.error({ err: err.message }, "[redis] connection error");
+  });
+}
+
+// M-1: 速率限制 — 防止登录/注册爆破（含 WS 握手）
 await fastify.register(import("@fastify/rate-limit"), {
   max: 100,
   timeWindow: "1 minute",
-  allowList: (req) => req.url?.startsWith("/api/ws/") ?? false,
 });
-// WebSocket 插件
+// WebSocket 插件 — 限制单帧最大 1 MiB（防 DoS）
+// maxPayload 透传给底层 ws 库（@fastify/websocket 类型未暴露，需类型断言）
+// @ts-expect-error maxPayload is a valid `ws` ServerOptions field
 await fastify.register(websocket, {
+  maxPayload: 1024 * 1024, // 1 MiB
   errorHandler: (error, socket, request) => {
     console.error("[ws] errorHandler:", error.message, "url:", request?.url);
     socket.close();
   },
 });
-// 监听 upgrade 事件用于调试
+// 监听 upgrade 事件用于调试（屏蔽 token 防止日志泄露）
 fastify.server.on("upgrade", (req, socket) => {
-  console.log("[ws] server upgrade event:", req.url, "socket localPort:", (socket as { localPort?: number }).localPort);
+  const safeUrl = (req.url ?? "").replace(/(\?|&)(token=)[^&]*/g, "$1$2***");
+  console.log(
+    "[ws] server upgrade event:",
+    safeUrl,
+    "socket localPort:",
+    (socket as { localPort?: number }).localPort,
+  );
 });
 
 // ─── Auth Hook: JWT 验证 ──────────────────────────────────────────
@@ -96,7 +122,15 @@ fastify.addHook("onRequest", async (request, reply) => {
       email: string;
       tenantId: string;
       role: string;
+      jti: string;
     };
+    // JWT 撤销黑名单检查
+    if (redisClient && payload.jti) {
+      const revoked = await redisClient.exists(`revoked:${payload.jti}`);
+      if (revoked) {
+        return reply.status(401).send({ error: "Token 已撤销，请重新登录" });
+      }
+    }
     request.user = {
       sub: payload.sub,
       email: payload.email,
