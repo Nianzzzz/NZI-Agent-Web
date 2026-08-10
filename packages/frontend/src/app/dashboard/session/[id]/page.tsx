@@ -2,12 +2,12 @@
  * T009 — Session 聊天详情页
  *
  * 路由: /dashboard/session/[id]
- * 布局:
- *   - 顶栏: 返回 + engine 徽章 + session 标题 + 连接状态
- *   - 中部: 消息流（用户/AI 气泡，AI 流式 typewriting + 闪烁光标）
- *   - 底部: 输入区 (发送 / 停止切换)
- *   - 首次加载: GET /api/sessions/:id + GET /api/sessions/:id/messages
- *   - 实时: WebSocket /api/ws/chat?token=&sessionId=
+ *
+ * 设计要点：
+ * - 推理过程在前（折叠方框），最终答案在后（Markdown 渲染）
+ * - 智能滚动：用户上滑时暂停跟随，显示"回到最下方"箭头
+ * - 一键复制答案内容
+ * - 超过 3 轮对话时右侧显示会话快速跳转导航
  */
 "use client";
 
@@ -17,6 +17,7 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Bot, Cpu, Send, Square, Loader2,
   Sparkles, AlertCircle, CheckCircle2, MessageSquare, User as UserIcon, Brain,
+  ChevronDown, Copy, Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,6 +26,7 @@ import { useChatSocket } from "@/hooks/use-chat-socket";
 import { useChatStore, type ChatMessage } from "@/stores/chat.store";
 import { fetchSessionDetail, fetchSessionMessages, type SessionDetail } from "@/lib/chat-api";
 import AgentTimeline from "@/components/chat/AgentTimeline";
+import Markdown from "@/components/chat/Markdown";
 import { cn } from "@/lib/utils";
 
 const ENGINE_META: Record<"PI" | "GROK", { label: string; gradient: string; ring: string }> = {
@@ -40,18 +42,71 @@ const ENGINE_META: Record<"PI" | "GROK", { label: string; gradient: string; ring
   },
 };
 
+/** 判断消息是否是 assistant 的最终回答（有实际内容） */
+function isAssistantAnswer(m: ChatMessage): boolean {
+  return m.role === "assistant" && m.status !== "error";
+}
+
+/** 判断消息是否是用户提问 */
+function isUserMessage(m: ChatMessage): boolean {
+  return m.role === "user";
+}
+
+// ─── 推理过程方框（固定高度 + 内部滚动）──────────────────────────
+
+function ReasoningBox({ nodes, isStreaming }: {
+  nodes: ChatMessage["nodes"];
+  isStreaming: boolean;
+}) {
+  if (!nodes || nodes.length === 0) return null;
+  const detailNodes = nodes.filter((n) => n.type !== "answer");
+  if (detailNodes.length === 0) return null;
+
+  return (
+    <div className="mb-3 rounded-lg border border-slate-200/60 bg-slate-50/70 dark:border-slate-700/50 dark:bg-slate-900/40">
+      <details className="group" open={isStreaming}>
+        <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-[11px] font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800/50">
+          <Brain className={cn("h-3.5 w-3.5 transition-transform group-open:rotate-0", isStreaming && "animate-pulse text-blue-500")} />
+          <span>{isStreaming ? "推理中…" : `推理过程（${detailNodes.length} 步）`}</span>
+          <span className="ml-auto text-[10px] text-slate-400">
+            {isStreaming ? "" : "点击展开"}
+          </span>
+        </summary>
+        {detailNodes.length > 0 && (
+          <div className="max-h-52 overflow-y-auto border-t border-slate-200/50 px-3 py-2 dark:border-slate-700/50">
+            <AgentTimeline nodes={nodes} engineGradient="" />
+          </div>
+        )}
+      </details>
+    </div>
+  );
+}
+
+// ─── 消息气泡 ─────────────────────────────────────────────────────
+
 function MessageBubble({ message, engineGradient }: {
   message: ChatMessage;
   engineGradient: string;
 }) {
   const isUser = message.role === "user";
-  const hasTimeline = !isUser && message.nodes && message.nodes.length > 0;
+  const isStreaming = message.status === "streaming";
+  const hasNodes = !isUser && message.nodes && message.nodes.length > 0;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* ignore */ }
+  };
+
   return (
     <div className={cn("flex w-full gap-3", isUser ? "justify-end" : "justify-start")}>
       {!isUser && (
         <div
           className={cn(
-            "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-md",
+            "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-md",
             engineGradient,
           )}
         >
@@ -60,7 +115,7 @@ function MessageBubble({ message, engineGradient }: {
       )}
       <div
         className={cn(
-          "max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm",
+          "group relative max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm",
           isUser
             ? "rounded-tr-sm bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-blue-500/20"
             : message.status === "error"
@@ -70,23 +125,56 @@ function MessageBubble({ message, engineGradient }: {
                 : "rounded-tl-sm border border-slate-200/60 bg-white text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100",
         )}
       >
-        <div className="whitespace-pre-wrap break-words">
-          {message.content || (
-            <span className="inline-flex items-center gap-1.5 text-slate-400">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              thinking…
-            </span>
-          )}
-          {message.status === "streaming" && (
-            <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-current align-middle" />
+        {/* ── 推理过程（在前） ── */}
+        {!isUser && hasNodes && (
+          <ReasoningBox nodes={message.nodes} isStreaming={isStreaming} />
+        )}
+
+        {/* ── 最终答案（在后） ── */}
+        <div className={cn(!isUser && hasNodes && "border-t border-slate-100 pt-2.5 dark:border-slate-800")}>
+          {!isUser ? (
+            <>
+              {message.content || (
+                <span className="inline-flex items-center gap-1.5 text-slate-400">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  思考中…
+                </span>
+              )}
+              {isStreaming && (
+                <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-current align-middle" />
+              )}
+              {/* Markdown 渲染（完成后） */}
+              {!isStreaming && message.content && (
+                <Markdown>{message.content}</Markdown>
+              )}
+              {/* streaming 中用原始文本（避免 markdown 渲染中断闪烁） */}
+              {isStreaming && message.content && (
+                <div className="whitespace-pre-wrap break-words text-slate-700 dark:text-slate-200">
+                  {message.content}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="whitespace-pre-wrap break-words">
+              {message.content}
+            </div>
           )}
         </div>
 
-        {/* T010: Agent Loop Timeline */}
-        {hasTimeline && (
-          <AgentTimeline nodes={message.nodes!} engineGradient={engineGradient} />
+        {/* ── 复制按钮（仅 assistant 答案） ── */}
+        {!isUser && message.content && message.status === "completed" && (
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="absolute -right-2 top-2 z-10 flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 opacity-0 shadow-sm transition-all group-hover:opacity-100 hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+            title="复制内容"
+          >
+            {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+            {copied ? "已复制" : "复制"}
+          </button>
         )}
 
+        {/* ── 状态信息 ── */}
         {message.status === "interrupted" && (
           <p className="mt-2 flex items-center gap-1 text-[11px] opacity-70">
             <AlertCircle className="h-3 w-3" />
@@ -107,13 +195,66 @@ function MessageBubble({ message, engineGradient }: {
         )}
       </div>
       {isUser && (
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
           <UserIcon className="h-4 w-4" />
         </div>
       )}
     </div>
   );
 }
+
+// ─── 会话快速跳转导航 ────────────────────────────────────────────
+
+interface TurnNav {
+  /** 用户问题文本（截断预览） */
+  preview: string;
+  /** 该 turn 第一条消息的 DOM id */
+  domId: string;
+  /** turn 序号 */
+  index: number;
+}
+
+function SessionNavigator({ turns, currentTurn }: {
+  turns: TurnNav[];
+  currentTurn: number | null;
+}) {
+  const [hovered, setHovered] = useState<number | null>(null);
+
+  if (turns.length <= 3) return null;
+
+  return (
+    <div className="fixed right-4 top-1/2 z-20 flex flex-col gap-1.5 -translate-y-1/2 rounded-full border border-slate-200 bg-white/90 p-1.5 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/90">
+      {turns.map((turn) => (
+        <button
+          key={turn.domId}
+          type="button"
+          onClick={() => {
+            document.getElementById(turn.domId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }}
+          onMouseEnter={() => setHovered(turn.index)}
+          onMouseLeave={() => setHovered(null)}
+          className={cn(
+            "relative flex h-2.5 w-2.5 items-center justify-center rounded-full transition-all",
+            currentTurn === turn.index
+              ? "bg-blue-500 scale-125"
+              : "bg-slate-300 hover:bg-slate-400 dark:bg-slate-600 dark:hover:bg-slate-500",
+          )}
+          title={turn.preview}
+        >
+          {/* 悬浮预览气泡 */}
+          {hovered === turn.index && (
+            <div className="absolute right-8 top-1/2 z-30 w-56 -translate-y-1/2 rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow-xl dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+              <div className="line-clamp-3 whitespace-pre-wrap">{turn.preview}</div>
+              <div className="absolute -right-1 top-1/2 h-2 w-2 -translate-y-1/2 rotate-45 border-b border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800" />
+            </div>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─── 主页面 ─────────────────────────────────────────────────────
 
 export default function SessionChatPage() {
   const params = useParams<{ id: string }>();
@@ -129,6 +270,11 @@ export default function SessionChatPage() {
   const [draft, setDraft] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState<"off" | "low" | "medium" | "high">("off");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // 智能滚动：用户是否主动上滑离开了底部
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const autoScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const replaceMessages = useChatStore((s) => s.replaceMessages);
 
@@ -163,8 +309,6 @@ export default function SessionChatPage() {
         }
 
         setSession(detail);
-        // 整体替换：清掉之前的临时消息（如刷新页面后遗留的 user_xxx 临时 ID），
-        // 用 DB 里的权威消息替换，避免与 API 里的 cuid 重复
         replaceMessages(
           sessionId,
           history.map((m) => ({
@@ -176,11 +320,14 @@ export default function SessionChatPage() {
             status: m.status === "COMPLETED" ? "completed" : "interrupted",
             createdAt: new Date(m.createdAt),
             latencyMs: m.latencyMs ?? undefined,
-            // T010: 从 DB 恢复 timeline 节点（刷新后保留推理过程）
             nodes: (m.timelineNodes as import("@/types/chat.types").TimelineNode[] | undefined) ?? undefined,
           })),
         );
         setIsLoading(false);
+        // 初始加载完成后自动滚到底部
+        requestAnimationFrame(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+        });
       } catch (err) {
         if (cancelled) return;
         setLoadError(err instanceof Error ? err.message : "加载失败");
@@ -200,10 +347,36 @@ export default function SessionChatPage() {
     return list.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   }, [messages, streamingMessage]);
 
-  // ─── 自动滚到底部 ───────────────────────────────────────
+  // ─── 智能滚动 ───────────────────────────────────────────────
+  // 检测用户是否主动上滑
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (isAtBottom) {
+      setUserScrolledUp(false);
+    } else if (!isGenerating) {
+      // 只在非生成状态时标记（生成中用户可能只是想多看一点）
+      setUserScrolledUp(true);
+    }
+  }, [isGenerating]);
+
+  // 当新内容到来时，如果用户在底部则自动跟随
   useEffect(() => {
+    if (!isGenerating || userScrolledUp) return;
+    // 微延迟让 DOM 更新后再滚动
+    autoScrollTimerRef.current = setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }, 80);
+    return () => {
+      if (autoScrollTimerRef.current) clearTimeout(autoScrollTimerRef.current);
+    };
+  }, [renderedMessages.length, streamingMessage?.content, isGenerating, userScrolledUp]);
+
+  const scrollToBottom = useCallback(() => {
+    setUserScrolledUp(false);
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [renderedMessages.length, streamingMessage?.content]);
+  }, []);
 
   // ─── 发送消息 ────────────────────────────────────────────
   const handleSend = useCallback(() => {
@@ -222,6 +395,47 @@ export default function SessionChatPage() {
     },
     [handleSend],
   );
+
+  // ─── 会话快速跳转：提取 turns（user + assistant 配对） ──────
+  const turns: TurnNav[] = useMemo(() => {
+    const result: TurnNav[] = [];
+    for (let i = 0; i < renderedMessages.length; i++) {
+      const m = renderedMessages[i];
+      if (isUserMessage(m)) {
+        result.push({
+          preview: m.content.slice(0, 60),
+          domId: `msg-${m.id}`,
+          index: result.length,
+        });
+      }
+    }
+    return result;
+  }, [renderedMessages]);
+
+  // 当前可见的 turn（最接近视口中心的 turn）
+  const [currentTurn, setCurrentTurn] = useState<number | null>(null);
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el || turns.length === 0) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let bestIdx = -1;
+        let bestRatio = 0;
+        entries.forEach((entry) => {
+          if (entry.intersectionRatio <= bestRatio) return;
+          const idx = turns.findIndex((t) => t.domId === entry.target.id);
+          if (idx >= 0) { bestRatio = entry.intersectionRatio; bestIdx = idx; }
+        });
+        if (bestIdx >= 0) setCurrentTurn(bestIdx);
+      },
+      { root: el, threshold: [0, 0.25, 0.5, 0.75, 1] },
+    );
+    turns.forEach((t) => {
+      const el2 = document.getElementById(t.domId);
+      if (el2) observer.observe(el2);
+    });
+    return () => observer.disconnect();
+  }, [turns, renderedMessages.length]);
 
   if (loadError) {
     return (
@@ -292,7 +506,11 @@ export default function SessionChatPage() {
       </header>
 
       {/* ── 消息流 ───────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto">
+      <main
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto"
+      >
         <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6">
           {isLoading && renderedMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 py-24 text-sm text-muted-foreground">
@@ -314,11 +532,27 @@ export default function SessionChatPage() {
             </div>
           ) : (
             renderedMessages.map((m) => (
-              <MessageBubble key={m.id} message={m} engineGradient={meta.gradient} />
+              <div key={m.id} id={`msg-${m.id}`}>
+                <MessageBubble message={m} engineGradient={meta.gradient} />
+              </div>
             ))
           )}
-          <div ref={messagesEndRef} />
+          <div ref={messagesEndRef} className="h-2" />
         </div>
+
+        {/* ── 回到最下方按钮（用户上滑时显示） ── */}
+        {userScrolledUp && isGenerating && (
+          <div className="fixed bottom-28 left-1/2 z-20 -translate-x-1/2">
+            <button
+              type="button"
+              onClick={scrollToBottom}
+              className="flex items-center gap-2 rounded-full border border-blue-300 bg-blue-50/95 px-4 py-2 text-xs font-medium text-blue-700 shadow-lg backdrop-blur transition-all hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-900/90 dark:text-blue-200"
+            >
+              <ChevronDown className="h-4 w-4 animate-bounce" />
+              回到最新回复
+            </button>
+          </div>
+        )}
       </main>
 
       {connectionError && (
@@ -326,6 +560,9 @@ export default function SessionChatPage() {
           {connectionError} — 正在尝试重连…
         </div>
       )}
+
+      {/* ── 会话快速跳转导航 ── */}
+      <SessionNavigator turns={turns} currentTurn={currentTurn} />
 
       {/* ── 输入区 ───────────────────────────────── */}
       <footer className="shrink-0 border-t border-slate-200/60 bg-white/80 backdrop-blur-md dark:border-slate-800/60 dark:bg-slate-950/80">

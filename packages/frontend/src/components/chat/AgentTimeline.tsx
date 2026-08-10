@@ -44,7 +44,7 @@ function nodeSummary(node: TimelineNode): string {
 
 // ─── 思考/工具折叠节点 ──────────────────────────────────────────
 
-function CollapsibleNode({
+export function CollapsibleNode({
   node,
   /** 外层面板是否展开（streaming 中 或 用户手动展开），展开时节点内容也强制展开 */
   parentExpanded,
