@@ -170,10 +170,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   completeStreaming: (sessionId, message) =>
     set((state) => {
+      const streaming = state.streamingBySession[sessionId];
+      // 把 streaming 期间积累的 nodes 保留到最终消息
+      const finalMessage: ChatMessage = {
+        ...message,
+        nodes: streaming?.nodes ?? message.nodes,
+      };
       const existing = state.messagesBySession[sessionId] ?? [];
-      const deduped = existing.some((m) => m.id === message.id)
-        ? existing.map((m) => (m.id === message.id ? message : m))
-        : [...existing, message];
+      const deduped = existing.some((m) => m.id === finalMessage.id)
+        ? existing.map((m) => (m.id === finalMessage.id ? finalMessage : m))
+        : [...existing, finalMessage];
       return {
         messagesBySession: {
           ...state.messagesBySession,
@@ -183,7 +189,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           ...state.streamingBySession,
           [sessionId]: null,
         },
-        activeRequests: state.activeRequests.filter((r) => r.requestId !== message.id),
+        activeRequests: state.activeRequests.filter((r) => r.requestId !== finalMessage.id),
       };
     }),
 
