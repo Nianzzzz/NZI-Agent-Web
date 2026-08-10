@@ -46,16 +46,16 @@ function nodeSummary(node: TimelineNode): string {
 
 function CollapsibleNode({
   node,
-  forceExpand,
+  isStreaming,
 }: {
   node: TimelineNode;
-  /** 当 forceExpand=true 时，无论如何都展开（streaming 中） */
-  forceExpand: boolean;
+  /** true = 任何 answer 节点仍在生成中，强制展开所有推理节点 */
+  isStreaming: boolean;
 }) {
   const isRunning = node.status === "running";
   const isError = node.status === "error";
-  // 当 forceExpand 为 true 时强制展开，否则 collapsed
-  const expanded = forceExpand || isRunning;
+  // streaming 中强制展开（包括已完成的思考节点）；否则折叠
+  const expanded = isStreaming || isRunning;
 
   const Icon = node.type === "tool" ? Wrench : Brain;
   const labelColor = node.type === "tool"
@@ -216,7 +216,7 @@ export default function AgentTimeline({
             <CollapsibleNode
               key={node.id}
               node={node}
-              forceExpand={isStreaming}
+              isStreaming={isStreaming}
             />
           ))}
         </div>
