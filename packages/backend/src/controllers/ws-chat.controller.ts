@@ -144,8 +144,25 @@ export class WsChatController {
           return;
         }
 
+        // Buffer → UTF-8 字符串 → JSON.parse → Zod 校验
+        const rawStr = Buffer.isBuffer(raw)
+          ? raw.toString("utf-8")
+          : typeof raw === "string"
+            ? raw
+            : String(raw);
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(rawStr);
+        } catch {
+          this.sendSocket(socket, {
+            type: "error",
+            payload: { message: "消息格式不是合法 JSON" },
+          } satisfies ServerMessage);
+          return;
+        }
+
         // Zod 校验入站消息
-        const validated = validateClientMessage(raw);
+        const validated = validateClientMessage(parsed);
         if ("error" in validated) {
           this.sendSocket(socket, {
             type: "error",
