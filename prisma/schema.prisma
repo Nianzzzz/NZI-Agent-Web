@@ -143,6 +143,7 @@ model Message {
   tokenUsage   Json?
   latencyMs    Int?
   status       MessageStatus @default(COMPLETED)
+  timelineNodes Json?
   createdAt    DateTime      @default(now())
 
   @@index([sessionId, createdAt])
