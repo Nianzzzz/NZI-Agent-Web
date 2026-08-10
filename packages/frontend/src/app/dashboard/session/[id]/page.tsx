@@ -269,6 +269,22 @@ export default function SessionChatPage() {
 
   const replaceMessages = useChatStore((s) => s.replaceMessages);
 
+  // 滚动到最后一个用户问题（让用户一进来先看到自己提的问题，再往下看答案）
+  const scrollToLastUserMessage = useCallback((userMsgIds: string[]) => {
+    const el = scrollContainerRef.current;
+    if (!el || userMsgIds.length === 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+      return;
+    }
+    const lastId = userMsgIds[userMsgIds.length - 1];
+    const lastEl = document.getElementById(`msg-${lastId}`);
+    if (lastEl) {
+      lastEl.scrollIntoView({ behavior: "auto", block: "start" });
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    }
+  }, []);
+
   const {
     connectionStatus,
     connectionError,
@@ -315,9 +331,11 @@ export default function SessionChatPage() {
           })),
         );
         setIsLoading(false);
-        // 初始加载完成后自动滚到底部
+        // 初始加载完成后滚动到最后一个用户问题（而非答案末尾），
+        // 让用户一进来就看到自己最后提的问题，答案在下方展开。
+        const userIds = history.filter((m) => m.role === "USER").map((m) => m.id);
         requestAnimationFrame(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+          scrollToLastUserMessage(userIds);
         });
       } catch (err) {
         if (cancelled) return;
@@ -329,7 +347,7 @@ export default function SessionChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, token, replaceMessages]);
+  }, [sessionId, token, replaceMessages, scrollToLastUserMessage]);
 
   // ─── 合并消息流（历史 + 当前 streaming） ───────────────────
   const renderedMessages = useMemo<ChatMessage[]>(() => {
