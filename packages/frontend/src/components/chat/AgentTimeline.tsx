@@ -25,7 +25,6 @@ export interface AgentTimelineProps {
   /** 隐藏内部折叠标题栏，始终展开节点内容（由外层容器接管折叠逻辑时使用） */
   hideHeader?: boolean;
 }
-
 const THINKING_PREVIEW_MAX = 80;
 
 function formatDuration(ms: number): string {
