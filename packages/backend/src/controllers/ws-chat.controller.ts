@@ -201,6 +201,10 @@ export class WsChatController {
       provider: agentType,
     });
 
+    // ─── 多轮上下文：取最近历史消息（不含刚写入的 USER 提问） ───
+    // 供 BailianAdapter 等使用；PiAdapter 自行维护 session 历史，忽略此字段
+    const historyMessages = await this._loadHistoryMessages(sessionId, user.tenantId);
+
     let finalDoneSent = false;
 
     try {
@@ -212,6 +216,7 @@ export class WsChatController {
         context: {
           thinkingLevel: thinkingLevel as "off" | "low" | "medium" | "high",
         },
+        messages: historyMessages,
       } as never);
 
       for await (const event of eventIterator) {
@@ -495,5 +500,30 @@ export class WsChatController {
     if (kind === "thinking") return "思考中…";
     if (kind === "tool") return "调用工具";
     return "回答";
+  }
+
+  /**
+   * 加载会话历史消息（最近 20 条，按时间正序），转换为 ChatCompletionMessage 格式。
+   * 供 BailianAdapter 等多轮上下文适配器使用。
+   *
+   * 注意：调用方（handleChat）在调用此方法之前已经写入了当前 USER 消息，
+   * 所以历史里不包含当前轮的用户提问（当前提问由 Adapter 追加）。
+   */
+  private async _loadHistoryMessages(
+    sessionId: string,
+    tenantId: string,
+  ): Promise<Array<{ role: "user" | "assistant" | "system"; content: string }>> {
+    try {
+      const raw = await this.sessionService.getMessages(sessionId, tenantId, 20);
+      return raw
+        .filter((m) => m.role === "USER" || m.role === "ASSISTANT")
+        .map((m) => ({
+          role: m.role === "USER" ? ("user" as const) : ("assistant" as const),
+          content: m.content,
+        }));
+    } catch {
+      // 历史加载失败不阻断当前对话
+      return [];
+    }
   }
 }

@@ -81,6 +81,12 @@ export interface PromptContext {
   allowedTools?: string[];
 }
 
+/** 多轮对话消息（OpenAI 格式，供 BailianAdapter 等使用） */
+export interface ChatCompletionMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
 export interface PromptOptions {
   /** 会话 ID */
   sessionId: string;
@@ -97,6 +103,11 @@ export interface PromptOptions {
    * 用于 Adapter 层注册 session → 支持 stop/abort 时按请求精确定位。
    */
   requestId: string;
+  /**
+   * 历史消息（多轮上下文，最近 N 条，由 Controller 组装后传入）。
+   * Adapter 可选使用（BailianAdapter 必用，PiAdapter 自行维护 session 历史）。
+   */
+  messages?: ChatCompletionMessage[];
 }
 
 // ─── Engine Health ────────────────────────────────────────────────

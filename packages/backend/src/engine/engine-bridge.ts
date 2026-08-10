@@ -15,6 +15,7 @@ import { EngineProvider } from "@nzi/shared-types";
 import { PiAdapter } from "./adapters/pi-adapter.js";
 import { GrokAdapter } from "./adapters/grok-adapter.js";
 import { MockEngineAdapter } from "./adapters/mock-adapter.js";
+import { BailianAdapter } from "./adapters/bailian-adapter.js";
 
 // ─── 注册表 ───────────────────────────────────────────────────────
 
@@ -62,7 +63,21 @@ export async function initializeAdapters(
 ): Promise<void> {
   const useMock = process.env.USE_MOCK_ENGINE !== "false";
 
-  const realAdapters: IEngineAdapter[] = [new PiAdapter(), new GrokAdapter()];
+  // ─── 真实适配器 ──────────────────────────────────────────────
+  //
+  // 优先级：BailianAdapter > PiAdapter > GrokAdapter
+  // - 如果配置了 BAILIAN_API_KEY，用 BailianAdapter 作为 PI provider
+  //   （百炼 OpenAI 兼容接口，支持 qwen 系列模型，无需安装 Pi SDK）
+  // - 否则用 PiAgent SDK（需要 packages/pi-agent 已构建）
+  const realAdapters: IEngineAdapter[] = [];
+
+  if (process.env.BAILIAN_API_KEY) {
+    realAdapters.push(new BailianAdapter());
+  } else {
+    realAdapters.push(new PiAdapter());
+  }
+  realAdapters.push(new GrokAdapter());
+
   for (const adapter of realAdapters) {
     try {
       await registerAdapter(adapter);
