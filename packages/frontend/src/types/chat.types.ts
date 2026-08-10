@@ -73,6 +73,8 @@ export interface DonePayload {
   content: string;
   tokenUsage?: { prompt: number; completion: number; total: number };
   latencyMs?: number;
+  /** T010: 完整的 timeline 节点列表（用于历史回放，刷新后恢复推理过程） */
+  nodes?: TimelineNode[];
 }
 
 export interface ErrorPayload {

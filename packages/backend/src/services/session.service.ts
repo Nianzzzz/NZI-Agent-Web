@@ -24,6 +24,8 @@ export interface CreateMessageInput {
   latencyMs?: number;
   rootEventId?: string;
   status?: "COMPLETED" | "INTERRUPTED";
+  /** T010: Agent Loop Timeline 节点（thinking/tool/answer 的完整事件流），落库后用于历史回放 */
+  timelineNodes?: unknown;
 }
 
 export class SessionService {
@@ -109,6 +111,9 @@ export class SessionService {
    * 创建消息（写入 User/AI/Tool 的对话消息）
    */
   async createMessage(input: CreateMessageInput) {
+    // Note: timelineNodes requires Prisma client regeneration; if the field
+    // is not yet in the generated client, the cast below lets the runtime
+    // pass it through to the DB (the column exists after the migration).
     return this.prisma.message.create({
       data: {
         sessionId: input.sessionId,
@@ -120,8 +125,11 @@ export class SessionService {
         latencyMs: input.latencyMs,
         rootEventId: input.rootEventId ?? null,
         status: input.status ?? "COMPLETED",
+        ...(input.timelineNodes != null
+          ? { timelineNodes: input.timelineNodes as never }
+          : {}),
       },
-    });
+    } as never);
   }
 
   /**
@@ -141,8 +149,11 @@ export class SessionService {
             latencyMs: input.latencyMs,
             rootEventId: input.rootEventId ?? null,
             status: input.status ?? "COMPLETED",
+            ...(input.timelineNodes != null
+              ? { timelineNodes: input.timelineNodes as never }
+              : {}),
           },
-        }),
+        } as never),
       ),
     );
   }

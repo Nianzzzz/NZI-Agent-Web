@@ -330,7 +330,9 @@ export class WsChatController {
         if (eventType === "agent_end" || eventType === "turn_end") {
           // 引擎声明本轮结束 — 落库 + 推 done
           if (!finalDoneSent && texts.length > 0) {
+            finalDoneSent = true;
             const fullText = texts.join("");
+            const finalNodes = Array.from(nodes.values());
             await this.sessionService.createMessage({
               sessionId,
               role: "ASSISTANT",
@@ -338,6 +340,7 @@ export class WsChatController {
               rootEventId: rootEventId ?? undefined,
               status: "COMPLETED",
               latencyMs: Date.now() - startTime,
+              timelineNodes: finalNodes,
             });
             this.sendSocket(socket, {
               type: "done",
@@ -345,28 +348,32 @@ export class WsChatController {
                 requestId,
                 content: fullText,
                 latencyMs: Date.now() - startTime,
+                nodes: finalNodes,
               },
             } satisfies ServerMessage);
-            finalDoneSent = true;
           }
         }
       }
 
       if (!finalDoneSent && texts.length > 0) {
+        const fullText = texts.join("");
+        const finalNodes = Array.from(nodes.values());
         await this.sessionService.createMessage({
           sessionId,
           role: "ASSISTANT",
-          content: texts.join(""),
+          content: fullText,
           rootEventId: rootEventId ?? undefined,
           status: "COMPLETED",
           latencyMs: Date.now() - startTime,
+          timelineNodes: finalNodes,
         });
         this.sendSocket(socket, {
           type: "done",
           payload: {
             requestId,
-            content: texts.join(""),
+            content: fullText,
             latencyMs: Date.now() - startTime,
+            nodes: finalNodes,
           },
         } satisfies ServerMessage);
       }

@@ -178,6 +178,8 @@ export default function SessionChatPage() {
               status: m.status === "COMPLETED" ? "completed" : "interrupted",
               createdAt: new Date(m.createdAt),
               latencyMs: m.latencyMs ?? undefined,
+              // T010: 从 DB 恢复 timeline 节点（刷新后保留推理过程）
+              nodes: (m.timelineNodes as import("@/types/chat.types").TimelineNode[] | undefined) ?? undefined,
             })),
           );
           historyLoadedRef.current = true;

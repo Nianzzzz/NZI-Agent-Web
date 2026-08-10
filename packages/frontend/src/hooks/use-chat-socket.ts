@@ -32,7 +32,7 @@ const WS_URL = (process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:4000").replace
 type IncomingMessage =
   | { type: "chunk"; payload: { requestId?: string; delta: string; reasoning?: boolean } }
   | { type: "node"; payload: { requestId?: string; node: TimelineNode } }
-  | { type: "done"; payload: { requestId?: string; content: string; latencyMs?: number } }
+  | { type: "done"; payload: { requestId?: string; content: string; latencyMs?: number; nodes?: TimelineNode[] } }
   | { type: "error"; payload: { requestId?: string; message: string } }
   | { type: "interrupted"; payload: { requestId?: string; content: string; reason: string } }
   | { type: "status"; payload: { requestId?: string; text?: string } };
@@ -133,6 +133,7 @@ export function useChatSocket({
               status: "completed",
               createdAt: new Date(),
               latencyMs: data.payload?.latencyMs,
+              nodes: data.payload?.nodes,
             });
           }
           activeRequestIdRef.current = null;

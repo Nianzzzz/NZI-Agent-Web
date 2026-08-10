@@ -17,6 +17,8 @@ export interface SessionDetail {
   user: { id: string; email: string; displayName: string | null };
 }
 
+import type { TimelineNode } from "@/types/chat.types";
+
 export interface HistoryMessage {
   id: string;
   sessionId: string;
@@ -26,6 +28,8 @@ export interface HistoryMessage {
   status: "COMPLETED" | "INTERRUPTED";
   createdAt: string;
   latencyMs?: number | null;
+  /** T010: 完整的 Agent Loop Timeline 节点（刷新后用于恢复推理过程） */
+  timelineNodes?: TimelineNode[] | null;
 }
 
 function authHeaders(): Record<string, string> {

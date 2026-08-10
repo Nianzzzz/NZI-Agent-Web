@@ -101,6 +101,8 @@ export interface ServerDonePayload {
   tokenUsage?: { prompt: number; completion: number; total: number };
   /** 耗时（毫秒） */
   latencyMs?: number;
+  /** T010: 完整的 timeline 节点列表，前端用于历史回放（刷新后恢复推理过程） */
+  nodes?: TimelineNode[];
 }
 
 /** 服务端 -> 客户端：生成出错 */
