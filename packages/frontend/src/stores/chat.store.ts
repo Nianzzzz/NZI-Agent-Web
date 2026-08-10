@@ -76,7 +76,7 @@ interface ChatActions {
   finalizeNode: (
     sessionId: string,
     nodeId: string,
-    updates: Partial<Pick<TimelineNode, "status" | "title" | "toolOutput" | "durationMs">>,
+    updates: Partial<Pick<TimelineNode, "status" | "title" | "toolOutput" | "durationMs" | "delta">>,
   ) => void;
 
   registerActiveRequest: (sessionId: string, requestId: string) => void;

@@ -107,7 +107,9 @@ export function useChatSocket({
               title,
               toolOutput,
               durationMs,
-            });
+              // 后端在 end 事件中回传完整 delta，确保前端拿到完整内容
+              delta: delta ?? undefined,
+            } as never);
           }
           forceTick((n) => n + 1);
           break;

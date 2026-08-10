@@ -159,7 +159,8 @@ export default function AgentTimeline({
   nodes,
 }: AgentTimelineProps) {
   const detailNodes = nodes.filter((n) => n.type !== "answer");
-  const isStreaming = nodes.some((n) => n.type === "answer" && n.status === "running");
+  // 任何节点还在 running 状态都视为 streaming 中（思考/工具/回答）
+  const isStreaming = nodes.some((n) => n.status === "running");
 
   // 用户手动控制折叠/展开（仅在非 streaming 时生效）
   const [userExpanded, setUserExpanded] = useState(false);
