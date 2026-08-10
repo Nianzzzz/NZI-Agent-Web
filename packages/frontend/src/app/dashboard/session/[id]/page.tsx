@@ -52,50 +52,20 @@ function isUserMessage(m: ChatMessage): boolean {
   return m.role === "user";
 }
 
-// ─── 推理过程方框（固定高度 + 内部滚动，自带折叠逻辑）──────────────
+// ─── 推理过程方框（外层容器 + 内部滚动，折叠由 AgentTimeline 负责）────
 
-function ReasoningBox({ nodes, isStreaming }: {
+function ReasoningBox({ nodes }: {
   nodes: ChatMessage["nodes"];
-  isStreaming: boolean;
 }) {
-  const [userExpanded, setUserExpanded] = useState(false);
-  const wasStreamingRef = useRef(false);
-
-  // streaming 刚结束时自动折叠
-  useEffect(() => {
-    if (wasStreamingRef.current && !isStreaming) {
-      setUserExpanded(false);
-    }
-    wasStreamingRef.current = isStreaming;
-  }, [isStreaming]);
-
   if (!nodes || nodes.length === 0) return null;
   const detailNodes = nodes.filter((n) => n.type !== "answer");
   if (detailNodes.length === 0) return null;
 
-  // streaming 中强制展开，否则由用户控制
-  const expanded = isStreaming || userExpanded;
-
   return (
-    <div className="mb-3 rounded-lg border border-slate-200/60 bg-slate-50/70 dark:border-slate-700/50 dark:bg-slate-900/40">
-      {/* 标题栏 */}
-      <button
-        type="button"
-        onClick={() => { if (!isStreaming) setUserExpanded((v) => !v); }}
-        className="flex w-full cursor-pointer select-none items-center gap-2 px-3 py-2 text-[11px] font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800/50"
-      >
-        <ChevronRight
-          className={cn("h-3 w-3 transition-transform", expanded && "rotate-90")}
-        />
-        <Brain className={cn("h-3.5 w-3.5", isStreaming && "animate-pulse text-blue-500")} />
-        <span>{isStreaming ? "推理中…" : `推理过程（${detailNodes.length} 步）`}</span>
-      </button>
-      {/* 节点内容 */}
-      {expanded && (
-        <div className="border-t border-slate-200/50 px-3 py-2 dark:border-slate-700/50">
-          <AgentTimeline nodes={nodes} engineGradient="" hideHeader />
-        </div>
-      )}
+    <div className="mb-3 max-h-60 overflow-y-auto rounded-lg border border-slate-200/60 bg-slate-50/70 dark:border-slate-700/50 dark:bg-slate-900/40">
+      <div className="p-3">
+        <AgentTimeline nodes={nodes} engineGradient="" />
+      </div>
     </div>
   );
 }
@@ -145,7 +115,7 @@ function MessageBubble({ message, engineGradient }: {
       >
         {/* ── 推理过程（在前） ── */}
         {!isUser && hasNodes && (
-          <ReasoningBox nodes={message.nodes} isStreaming={isStreaming} />
+          <ReasoningBox nodes={message.nodes} />
         )}
 
         {/* ── 最终答案（在后） ── */}

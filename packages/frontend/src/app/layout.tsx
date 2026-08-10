@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AuthGuard } from "@/components/auth/auth-guard";
+import "katex/dist/katex.min.css";
 import "./globals.css";
 
 export const metadata: Metadata = {

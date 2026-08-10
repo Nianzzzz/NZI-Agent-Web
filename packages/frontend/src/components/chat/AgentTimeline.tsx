@@ -20,10 +20,8 @@ import { useState, useEffect, useRef } from "react";
 
 export interface AgentTimelineProps {
   nodes: TimelineNode[];
-  /** 引擎渐变色 class（保留，暂不使用） */
+  /** 引擎渐变色 class（保留兼容） */
   engineGradient?: string;
-  /** 隐藏内部折叠标题栏，始终展开节点内容（由外层容器接管折叠逻辑时使用） */
-  hideHeader?: boolean;
 }
 const THINKING_PREVIEW_MAX = 80;
 
@@ -158,8 +156,6 @@ export function CollapsibleNode({
  */
 export default function AgentTimeline({
   nodes,
-  engineGradient,
-  hideHeader,
 }: AgentTimelineProps) {
   const detailNodes = nodes.filter((n) => n.type !== "answer");
   // 任何节点还在 running 状态都视为 streaming 中（思考/工具/回答）
@@ -181,43 +177,40 @@ export default function AgentTimeline({
   if (detailNodes.length === 0) return null;
 
   // streaming 中强制展开，否则由用户控制
-  // hideHeader 时（嵌入 ReasoningBox）始终展开，由外层接管折叠
-  const expanded = hideHeader ? true : (isStreaming || userExpanded);
+  const expanded = isStreaming || userExpanded;
 
   return (
-    <div className={cn("mt-3 border-t border-slate-200/40 pt-2.5 dark:border-slate-800/40", !hideHeader || "mt-0 border-t-0 pt-0")}>
-      {/* 可点击的标题栏（hideHeader 时隐藏） */}
-      {!hideHeader && (
-        <button
-          type="button"
-          onClick={() => {
-            if (!isStreaming) setUserExpanded((v) => !v);
-          }}
-          className="flex w-full cursor-pointer select-none items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-        >
-          <ChevronRight
-            className={cn(
-              "h-3 w-3 transition-transform",
-              expanded && "rotate-90",
-            )}
-          />
-          {isStreaming ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Loader2 className="h-3 w-3 animate-spin text-blue-500" />
-              推理中…
-            </span>
-          ) : (
-            <span>查看推理过程</span>
+    <div className="mt-3 border-t border-slate-200/40 pt-2.5 dark:border-slate-800/40">
+      {/* 可点击的标题栏 */}
+      <button
+        type="button"
+        onClick={() => {
+          if (!isStreaming) setUserExpanded((v) => !v);
+        }}
+        className="flex w-full cursor-pointer select-none items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+      >
+        <ChevronRight
+          className={cn(
+            "h-3 w-3 transition-transform",
+            expanded && "rotate-90",
           )}
-          <span className="text-[10px] text-slate-400">
-            ({detailNodes.length} 步)
+        />
+        {isStreaming ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Loader2 className="h-3 w-3 animate-spin text-blue-500" />
+            推理中…
           </span>
-        </button>
-      )}
+        ) : (
+          <span>查看推理过程</span>
+        )}
+        <span className="text-[10px] text-slate-400">
+          ({detailNodes.length} 步)
+        </span>
+      </button>
 
       {/* 推理节点列表 */}
       {expanded && (
-        <div className={cn("mt-1.5 space-y-1", hideHeader && "mt-0")}>
+        <div className="mt-1.5 space-y-1">
           {detailNodes.map((node) => (
             <CollapsibleNode
               key={node.id}
