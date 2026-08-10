@@ -14,13 +14,14 @@ export interface Session {
 interface SessionState {
   sessions: Session[];
   isLoading: boolean;
+  isDeleting: Record<string, boolean>;
   error: string | null;
 }
 
 interface SessionActions {
   setSessions: (sessions: Session[]) => void;
   addSession: (session: Session) => void;
-  removeSession: (id: string) => void;
+  removeSession: (id: string) => Promise<void>;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   fetchSessions: () => Promise<void>;
@@ -30,23 +31,37 @@ interface SessionActions {
 export const useSessionStore = create<SessionState & SessionActions>((set, get) => ({
   sessions: [],
   isLoading: false,
+  isDeleting: {},
   error: null,
   setSessions: (sessions) => set({ sessions }),
   addSession: (session) =>
     set((state) => ({ sessions: [session, ...state.sessions] })),
-  removeSession: (id) => {
-    // 乐观删除：先立即从列表移除，再异步调后端
-    set((state) => ({ sessions: state.sessions.filter((s) => s.id !== id) }));
-    // 异步调后端 DELETE
-    const token = useAuthStore.getState().token;
-    if (token) {
-      fetch(`/api/sessions/${id}`, {
+  removeSession: async (id) => {
+    // 标记删除中，防止重复触发
+    set((state) => ({ isDeleting: { ...state.isDeleting, [id]: true } }));
+    try {
+      const token = useAuthStore.getState().token;
+      if (!token) throw new Error("未登录");
+      const res = await fetch(`/api/sessions/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
-      }).catch(() => {
-        // 后端删除失败，静默刷新恢复
-        get().fetchSessions();
       });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`删除失败: ${res.status} ${body}`);
+      }
+      // 后端删除成功 → 乐观从列表移除
+      set((state) => ({
+        sessions: state.sessions.filter((s) => s.id !== id),
+        isDeleting: { ...state.isDeleting, [id]: false },
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "删除失败";
+      // 删除失败：清除删除中状态，报错提示
+      set((state) => ({
+        isDeleting: { ...state.isDeleting, [id]: false },
+        error: message,
+      }));
     }
   },
   setLoading: (isLoading) => set({ isLoading }),

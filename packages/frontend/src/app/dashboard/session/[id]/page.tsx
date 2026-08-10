@@ -129,7 +129,6 @@ export default function SessionChatPage() {
   const [draft, setDraft] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState<"off" | "low" | "medium" | "high">("off");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const historyLoadedRef = useRef(false);
 
   const replaceMessages = useChatStore((s) => s.replaceMessages);
 
@@ -164,26 +163,23 @@ export default function SessionChatPage() {
         }
 
         setSession(detail);
-        if (!historyLoadedRef.current) {
-          // 整体替换：清掉之前的临时消息（如刷新页面后遗留的 user_xxx 临时 ID），
-          // 用 DB 里的权威消息替换，避免与 API 里的 cuid 重复
-          replaceMessages(
-            sessionId,
-            history.map((m) => ({
-              id: m.id,
-              sessionId: m.sessionId,
-              role: m.role === "USER" ? "user" : m.role === "TOOL_RESULT" ? "tool_result" : "assistant",
-              content: m.content,
-              reasoning: m.reasoning ?? undefined,
-              status: m.status === "COMPLETED" ? "completed" : "interrupted",
-              createdAt: new Date(m.createdAt),
-              latencyMs: m.latencyMs ?? undefined,
-              // T010: 从 DB 恢复 timeline 节点（刷新后保留推理过程）
-              nodes: (m.timelineNodes as import("@/types/chat.types").TimelineNode[] | undefined) ?? undefined,
-            })),
-          );
-          historyLoadedRef.current = true;
-        }
+        // 整体替换：清掉之前的临时消息（如刷新页面后遗留的 user_xxx 临时 ID），
+        // 用 DB 里的权威消息替换，避免与 API 里的 cuid 重复
+        replaceMessages(
+          sessionId,
+          history.map((m) => ({
+            id: m.id,
+            sessionId: m.sessionId,
+            role: m.role === "USER" ? "user" : m.role === "TOOL_RESULT" ? "tool_result" : "assistant",
+            content: m.content,
+            reasoning: m.reasoning ?? undefined,
+            status: m.status === "COMPLETED" ? "completed" : "interrupted",
+            createdAt: new Date(m.createdAt),
+            latencyMs: m.latencyMs ?? undefined,
+            // T010: 从 DB 恢复 timeline 节点（刷新后保留推理过程）
+            nodes: (m.timelineNodes as import("@/types/chat.types").TimelineNode[] | undefined) ?? undefined,
+          })),
+        );
         setIsLoading(false);
       } catch (err) {
         if (cancelled) return;
