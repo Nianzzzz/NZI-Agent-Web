@@ -182,7 +182,8 @@ export default function AgentTimeline({
   if (detailNodes.length === 0) return null;
 
   // streaming 中强制展开，否则由用户控制
-  const expanded = isStreaming || userExpanded;
+  // hideHeader 时（嵌入 ReasoningBox）始终展开，由外层接管折叠
+  const expanded = hideHeader ? true : (isStreaming || userExpanded);
 
   return (
     <div className={cn("mt-3 border-t border-slate-200/40 pt-2.5 dark:border-slate-800/40", !hideHeader || "mt-0 border-t-0 pt-0")}>

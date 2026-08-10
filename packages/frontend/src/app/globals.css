@@ -81,3 +81,21 @@
     color: hsl(var(--foreground));
   }
 }
+
+/* ─── MathJax 排版修正 ─────────────────────────────────────── */
+/* MathJax SVG 默认 vertical-align: middle 会让公式相对行框下沉，
+   导致冒号等标点后公式整体下移。修正为 baseline 对齐。 */
+mjx-container[jax="CHTML"][display="true"] {
+  display: block;
+  text-align: center;
+  margin: 0.75em 0;
+}
+mjx-container:not([display="true"]) {
+  display: inline;
+  vertical-align: baseline !important;
+  margin: 0 0.1em;
+}
+mjx-container[jax="CHTML"] img,
+mjx-container[jax="CHTML"] svg {
+  vertical-align: baseline;
+}
