@@ -131,7 +131,7 @@ export default function SessionChatPage() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const historyLoadedRef = useRef(false);
 
-  const appendMessage = useChatStore((s) => s.appendMessage);
+  const replaceMessages = useChatStore((s) => s.replaceMessages);
 
   const {
     connectionStatus,
@@ -165,8 +165,11 @@ export default function SessionChatPage() {
 
         setSession(detail);
         if (!historyLoadedRef.current) {
-          for (const m of history) {
-            appendMessage(sessionId, {
+          // 整体替换：清掉之前的临时消息（如刷新页面后遗留的 user_xxx 临时 ID），
+          // 用 DB 里的权威消息替换，避免与 API 里的 cuid 重复
+          replaceMessages(
+            sessionId,
+            history.map((m) => ({
               id: m.id,
               sessionId: m.sessionId,
               role: m.role === "USER" ? "user" : m.role === "TOOL_RESULT" ? "tool_result" : "assistant",
@@ -175,8 +178,8 @@ export default function SessionChatPage() {
               status: m.status === "COMPLETED" ? "completed" : "interrupted",
               createdAt: new Date(m.createdAt),
               latencyMs: m.latencyMs ?? undefined,
-            });
-          }
+            })),
+          );
           historyLoadedRef.current = true;
         }
         setIsLoading(false);
@@ -190,7 +193,7 @@ export default function SessionChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, token, appendMessage]);
+  }, [sessionId, token, replaceMessages]);
 
   // ─── 合并消息流（历史 + 当前 streaming） ───────────────────
   const renderedMessages = useMemo<ChatMessage[]>(() => {

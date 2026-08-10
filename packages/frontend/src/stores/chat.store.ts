@@ -59,6 +59,8 @@ interface ChatActions {
   setWebSocket: (ws: WebSocket | null) => void;
 
   appendMessage: (sessionId: string, message: ChatMessage) => void;
+  /** 用 DB 历史消息整体替换该 session 的消息列表（避免临时 ID 与 DB ID 重复） */
+  replaceMessages: (sessionId: string, messages: ChatMessage[]) => void;
   updateStreamingContent: (sessionId: string, delta: string) => void;
   /** 设置 streaming 消息（占位，供 addNode/appendNodeDelta 使用） */
   setStreaming: (sessionId: string, message: ChatMessage) => void;
@@ -133,6 +135,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       };
     }),
+
+  replaceMessages: (sessionId, messages) =>
+    set((state) => ({
+      messagesBySession: {
+        ...state.messagesBySession,
+        [sessionId]: messages,
+      },
+    })),
 
   updateStreamingContent: (sessionId, delta) =>
     set((state) => {

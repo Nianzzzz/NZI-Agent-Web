@@ -12,7 +12,7 @@
 
 import {
   Brain, Wrench, Loader2, CheckCircle2, XCircle,
-  ChevronDown, ChevronRight, Timer, Sparkles,
+  ChevronDown, ChevronRight, Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TimelineNode } from "@/types/chat.types";
@@ -160,84 +160,44 @@ function CollapsibleNode({
   );
 }
 
-// ─── 答案节点（永远展开，置顶） ─────────────────────────────────
-
-function AnswerNode({
-  node,
-  isStreaming,
-}: {
-  node: TimelineNode;
-  isStreaming: boolean;
-}) {
-  const hasContent = !!node.delta;
-  return (
-    <div className="rounded-md border border-emerald-200/60 bg-emerald-50/30 px-3 py-2.5 dark:border-emerald-800/30 dark:bg-emerald-950/10">
-      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-        {isStreaming ? (
-          <Loader2 className="h-3 w-3 animate-spin" />
-        ) : hasContent ? (
-          <CheckCircle2 className="h-3 w-3" />
-        ) : (
-          <Sparkles className="h-3 w-3" />
-        )}
-        回答
-        {node.durationMs != null && !isStreaming && (
-          <span className="ml-auto inline-flex items-center gap-0.5 text-[10px] font-normal normal-case tracking-normal text-emerald-600/70">
-            <Timer className="h-2.5 w-2.5" />
-            {formatDuration(node.durationMs)}
-          </span>
-        )}
-      </div>
-      {hasContent ? (
-        <div className="whitespace-pre-wrap break-words text-[14px] leading-relaxed text-slate-800 dark:text-slate-100">
-          {node.delta}
-        </div>
-      ) : (
-        <div className="text-[14px] text-slate-400">等待回答…</div>
-      )}
-    </div>
-  );
-}
-
 // ─── 顶层渲染 ───────────────────────────────────────────────────
 
+/**
+ * AgentTimeline 只渲染"推理详情"（思考/工具节点）。
+ * 答案（answer）节点的内容由 MessageBubble 通过 message.content 直接渲染，
+ * 避免在同一气泡里重复显示两份答案。
+ *
+ * 整体外层是一个 <details>，默认折叠；用户在生成时可点开查看推理步骤。
+ */
 export default function AgentTimeline({
   nodes,
 }: AgentTimelineProps) {
-  if (nodes.length === 0) return null;
-
-  const answerNode = nodes.find((n) => n.type === "answer");
   const detailNodes = nodes.filter((n) => n.type !== "answer");
-  const isStreaming = !!answerNode && answerNode.status === "running";
+  // 还有 answer 节点在 streaming → 自动展开（让用户看到推理过程）
+  const isStreaming = nodes.some((n) => n.type === "answer" && n.status === "running");
+
+  if (detailNodes.length === 0) return null;
 
   return (
-    <div className="mt-3 space-y-2 border-t border-slate-200/40 pt-2.5 dark:border-slate-800/40">
-      {/* 答案置顶，最显眼 */}
-      {answerNode && (
-        <AnswerNode node={answerNode} isStreaming={isStreaming} />
-      )}
-
-      {/* 思考/工具放底部，作为"推理细节" */}
-      {detailNodes.length > 0 && (
-        <details className="group" open={isStreaming}>
-          <summary className="flex cursor-pointer select-none items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
-            <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
-            <span>查看推理过程</span>
-            <span className="text-[10px] text-slate-400">
-              ({detailNodes.length} 步)
-            </span>
-          </summary>
-          <div className="mt-1.5 space-y-1">
-            {detailNodes.map((node) => (
-              <CollapsibleNode
-                key={node.id}
-                node={node}
-                defaultExpanded={isStreaming}
-              />
-            ))}
-          </div>
-        </details>
-      )}
+    <div className="mt-3 border-t border-slate-200/40 pt-2.5 dark:border-slate-800/40">
+      <details className="group" open={isStreaming}>
+        <summary className="flex cursor-pointer select-none items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+          <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+          <span>查看推理过程</span>
+          <span className="text-[10px] text-slate-400">
+            ({detailNodes.length} 步)
+          </span>
+        </summary>
+        <div className="mt-1.5 space-y-1">
+          {detailNodes.map((node) => (
+            <CollapsibleNode
+              key={node.id}
+              node={node}
+              defaultExpanded={isStreaming}
+            />
+          ))}
+        </div>
+      </details>
     </div>
   );
 }
