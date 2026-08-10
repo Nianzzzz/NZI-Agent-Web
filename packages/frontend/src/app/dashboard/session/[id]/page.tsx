@@ -62,7 +62,7 @@ function ReasoningBox({ nodes }: {
   if (detailNodes.length === 0) return null;
 
   return (
-    <div className="mb-3 max-h-60 overflow-y-auto rounded-lg border border-slate-200/60 bg-slate-50/70 dark:border-slate-700/50 dark:bg-slate-900/40">
+    <div className="mb-3 rounded-lg border border-slate-200/60 bg-slate-50/70 dark:border-slate-700/50 dark:bg-slate-900/40">
       <div className="p-3">
         <AgentTimeline nodes={nodes} engineGradient="" />
       </div>

@@ -100,7 +100,7 @@ export function CollapsibleNode({
       </div>
 
       {expanded && (
-        <div className="border-t border-current/10 px-2.5 py-2 text-xs">
+        <div className="max-h-40 overflow-y-auto border-t border-current/10 px-2.5 py-2 text-xs">
           {node.type === "tool" && (
             <>
               {node.toolInput && (
