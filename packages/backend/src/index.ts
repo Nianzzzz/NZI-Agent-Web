@@ -56,12 +56,23 @@ await fastify.register(jwt, {
 });
 
 // M-1: 速率限制 — 防止登录/注册爆破
+// 跳过 WebSocket 路由（WS 升级请求是高频 GET，不应计入限流）
 await fastify.register(import("@fastify/rate-limit"), {
   max: 100,
   timeWindow: "1 minute",
+  allowList: (req) => req.url?.startsWith("/api/ws/") ?? false,
 });
 // WebSocket 插件
-await fastify.register(websocket);
+await fastify.register(websocket, {
+  errorHandler: (error, socket, request) => {
+    console.error("[ws] errorHandler:", error.message, "url:", request?.url);
+    socket.end();
+  },
+});
+// 监听 upgrade 事件用于调试
+fastify.server.on("upgrade", (req, socket) => {
+  console.log("[ws] server upgrade event:", req.url, "socket localPort:", (socket as { localPort?: number }).localPort);
+});
 
 // ─── Auth Hook: JWT 验证 ──────────────────────────────────────────
 
