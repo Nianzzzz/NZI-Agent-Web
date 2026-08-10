@@ -44,9 +44,9 @@ function CodeBlock({
   };
 
   return (
-    <div className="relative my-3 overflow-hidden rounded-lg border border-slate-200 bg-slate-900 text-slate-100 dark:border-slate-700">
+    <div className="relative my-4 overflow-hidden rounded-lg border border-slate-200 bg-slate-900 text-slate-100 dark:border-slate-700">
       {lang && (
-        <div className="flex items-center justify-between border-b border-slate-700 px-3 py-1 text-[10px] uppercase tracking-wider text-slate-400">
+        <div className="flex items-center justify-between border-b border-slate-700 px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-400">
           <span>{lang}</span>
           <button
             type="button"
@@ -58,7 +58,7 @@ function CodeBlock({
           </button>
         </div>
       )}
-      <pre className="max-h-[400px] overflow-auto p-3 text-xs leading-relaxed">
+      <pre className="max-h-[400px] overflow-auto p-4 text-xs leading-relaxed">
         <code>{children}</code>
       </pre>
     </div>
@@ -91,7 +91,7 @@ export default function Markdown({ children, copyable, className }: MarkdownProp
           {copied ? "已复制" : "复制"}
         </button>
       )}
-      <div className="prose prose-sm max-w-none prose-p:leading-relaxed prose-pre:m-0 prose-pre:rounded-lg prose-pre:border prose-pre:border-slate-200 prose-pre:bg-slate-50 prose-code:rounded prose-code:bg-slate-100 prose-code:px-1 prose-code:py-0.5 prose-code:text-slate-800 dark:prose-invert dark:prose-pre:border-slate-700 dark:prose-pre:bg-slate-800/50 dark:prose-code:bg-slate-800 dark:prose-code:text-slate-200">
+      <div className="prose prose-slate prose-p:leading-loose prose-li:my-1 prose-headings:mt-4 prose-headings:mb-2 prose-headings:font-semibold prose-h1:text-lg prose-h2:text-base prose-h3:text-sm prose-h4:text-sm prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-blockquote:my-2 prose-blockquote:border-l-4 prose-pre:my-3 prose-pre:border prose-pre:border-slate-200 prose-pre:bg-slate-50 prose-code:rounded prose-code:bg-slate-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:text-slate-800 prose-code:before:content-none prose-code:after:content-none prose-table:my-2 prose-thead:border prose-th:border prose-th:bg-slate-50 prose-th:px-3 prose-th:py-2 prose-td:border prose-td:px-3 prose-td:py-2 dark:prose-invert dark:prose-pre:border-slate-700 dark:prose-pre:bg-slate-800/50 dark:prose-code:bg-slate-800 dark:prose-code:text-slate-200 dark:prose-th:bg-slate-800/50 max-w-none">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{

@@ -54,9 +54,8 @@ function isUserMessage(m: ChatMessage): boolean {
 
 // ─── 推理过程方框（固定高度 + 内部滚动）──────────────────────────
 
-function ReasoningBox({ nodes, isStreaming }: {
+function ReasoningBox({ nodes }: {
   nodes: ChatMessage["nodes"];
-  isStreaming: boolean;
 }) {
   if (!nodes || nodes.length === 0) return null;
   const detailNodes = nodes.filter((n) => n.type !== "answer");
@@ -64,20 +63,14 @@ function ReasoningBox({ nodes, isStreaming }: {
 
   return (
     <div className="mb-3 rounded-lg border border-slate-200/60 bg-slate-50/70 dark:border-slate-700/50 dark:bg-slate-900/40">
-      <details className="group" open={isStreaming}>
-        <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-[11px] font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800/50">
-          <Brain className={cn("h-3.5 w-3.5 transition-transform group-open:rotate-0", isStreaming && "animate-pulse text-blue-500")} />
-          <span>{isStreaming ? "推理中…" : `推理过程（${detailNodes.length} 步）`}</span>
-          <span className="ml-auto text-[10px] text-slate-400">
-            {isStreaming ? "" : "点击展开"}
-          </span>
-        </summary>
-        {detailNodes.length > 0 && (
-          <div className="max-h-52 overflow-y-auto border-t border-slate-200/50 px-3 py-2 dark:border-slate-700/50">
-            <AgentTimeline nodes={nodes} engineGradient="" />
-          </div>
-        )}
-      </details>
+      <div className="flex items-center gap-2 px-3 py-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+        <Brain className="h-3.5 w-3.5 text-slate-400" />
+        <span>推理过程</span>
+        <span className="text-[10px] text-slate-400">（{detailNodes.length} 步）</span>
+      </div>
+      <div className="border-t border-slate-200/50 px-3 py-2 dark:border-slate-700/50">
+        <AgentTimeline nodes={nodes} engineGradient="" />
+      </div>
     </div>
   );
 }
@@ -127,31 +120,29 @@ function MessageBubble({ message, engineGradient }: {
       >
         {/* ── 推理过程（在前） ── */}
         {!isUser && hasNodes && (
-          <ReasoningBox nodes={message.nodes} isStreaming={isStreaming} />
+          <ReasoningBox nodes={message.nodes} />
         )}
 
         {/* ── 最终答案（在后） ── */}
         <div className={cn(!isUser && hasNodes && "border-t border-slate-100 pt-2.5 dark:border-slate-800")}>
           {!isUser ? (
             <>
-              {message.content || (
+              {!message.content && !isStreaming && (
                 <span className="inline-flex items-center gap-1.5 text-slate-400">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   思考中…
                 </span>
               )}
               {isStreaming && (
-                <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-current align-middle" />
+                <>
+                  <div className="whitespace-pre-wrap break-words text-slate-700 dark:text-slate-200">
+                    {message.content}
+                  </div>
+                  <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-current align-middle" />
+                </>
               )}
-              {/* Markdown 渲染（完成后） */}
               {!isStreaming && message.content && (
                 <Markdown>{message.content}</Markdown>
-              )}
-              {/* streaming 中用原始文本（避免 markdown 渲染中断闪烁） */}
-              {isStreaming && message.content && (
-                <div className="whitespace-pre-wrap break-words text-slate-700 dark:text-slate-200">
-                  {message.content}
-                </div>
               )}
             </>
           ) : (
