@@ -69,7 +69,7 @@ function ReasoningBox({ nodes }: {
         <span className="text-[10px] text-slate-400">（{detailNodes.length} 步）</span>
       </div>
       <div className="border-t border-slate-200/50 px-3 py-2 dark:border-slate-700/50">
-        <AgentTimeline nodes={nodes} engineGradient="" />
+        <AgentTimeline nodes={nodes} engineGradient="" hideHeader />
       </div>
     </div>
   );

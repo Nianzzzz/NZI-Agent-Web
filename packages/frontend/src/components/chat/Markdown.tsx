@@ -1,9 +1,10 @@
 /**
  * NZi Agent Web — Markdown 渲染组件
  *
- * 使用 react-markdown + remark-gfm 渲染 AI 回答，支持：
+ * 使用 react-markdown + remark-gfm + remark-math + rehype-mathjax 渲染 AI 回答，支持：
  * - 标题、列表、引用、代码块、表格等 GFM 语法
  * - 行内代码、加粗、斜体等行内样式
+ * - LaTeX 数学公式（$...$ 行内，$$...$$ 块级）
  * - 一键复制按钮（答案气泡内使用）
  */
 
@@ -11,6 +12,8 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeMathjax from "rehype-mathjax";
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -93,7 +96,8 @@ export default function Markdown({ children, copyable, className }: MarkdownProp
       )}
       <div className="prose prose-slate prose-p:leading-loose prose-li:my-1 prose-headings:mt-4 prose-headings:mb-2 prose-headings:font-semibold prose-h1:text-lg prose-h2:text-base prose-h3:text-sm prose-h4:text-sm prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-blockquote:my-2 prose-blockquote:border-l-4 prose-pre:my-3 prose-pre:border prose-pre:border-slate-200 prose-pre:bg-slate-50 prose-code:rounded prose-code:bg-slate-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:text-slate-800 prose-code:before:content-none prose-code:after:content-none prose-table:my-2 prose-thead:border prose-th:border prose-th:bg-slate-50 prose-th:px-3 prose-th:py-2 prose-td:border prose-td:px-3 prose-td:py-2 dark:prose-invert dark:prose-pre:border-slate-700 dark:prose-pre:bg-slate-800/50 dark:prose-code:bg-slate-800 dark:prose-code:text-slate-200 dark:prose-th:bg-slate-800/50 max-w-none">
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeMathjax]}
           components={{
             code({ className, children, ...props }) {
               const isBlock = Boolean(className);
