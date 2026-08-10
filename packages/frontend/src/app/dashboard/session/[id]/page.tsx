@@ -209,7 +209,7 @@ function SessionNavigator({ turns, currentTurn }: {
   if (turns.length <= 3) return null;
 
   return (
-    <div className="fixed right-4 top-1/2 z-20 flex flex-col gap-1.5 -translate-y-1/2 rounded-full border border-slate-200 bg-white/90 p-1.5 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/90">
+    <div className="fixed left-4 top-1/2 z-20 flex flex-col gap-1.5 -translate-y-1/2 rounded-full border border-slate-200 bg-white/90 p-1.5 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/90">
       {turns.map((turn) => (
         <button
           key={turn.domId}
@@ -225,13 +225,12 @@ function SessionNavigator({ turns, currentTurn }: {
               ? "bg-blue-500 scale-125"
               : "bg-slate-300 hover:bg-slate-400 dark:bg-slate-600 dark:hover:bg-slate-500",
           )}
-          title={turn.preview}
         >
-          {/* 悬浮预览气泡 */}
+          {/* 悬浮预览气泡（左对齐，箭头指向左侧圆点） */}
           {hovered === turn.index && (
-            <div className="absolute right-8 top-1/2 z-30 w-56 -translate-y-1/2 rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow-xl dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            <div className="absolute left-8 top-1/2 z-30 w-56 -translate-y-1/2 rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow-xl dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
               <div className="line-clamp-3 whitespace-pre-wrap">{turn.preview}</div>
-              <div className="absolute -right-1 top-1/2 h-2 w-2 -translate-y-1/2 rotate-45 border-b border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800" />
+              <div className="absolute -left-1 top-1/2 h-2 w-2 -translate-y-1/2 rotate-45 border-l border-b border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800" />
             </div>
           )}
         </button>
@@ -260,7 +259,6 @@ export default function SessionChatPage() {
 
   // 智能滚动：用户是否主动上滑离开了底部
   const [userScrolledUp, setUserScrolledUp] = useState(false);
-  const autoScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const replaceMessages = useChatStore((s) => s.replaceMessages);
 
@@ -352,30 +350,32 @@ export default function SessionChatPage() {
   }, [messages, streamingMessage]);
 
   // ─── 智能滚动 ───────────────────────────────────────────────
-  // 检测用户是否主动上滑
+  // 用户滚动时更新状态：不在底部 = 用户主动上滑
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    if (isAtBottom) {
-      setUserScrolledUp(false);
-    } else if (!isGenerating) {
-      // 只在非生成状态时标记（生成中用户可能只是想多看一点）
-      setUserScrolledUp(true);
-    }
-  }, [isGenerating]);
+    setUserScrolledUp(!isAtBottom);
+  }, []);
 
-  // 当新内容到来时，如果用户在底部则自动跟随
+  // 生成中且用户在底部时，每帧自动跟随新内容向下滚动
+  const autoScrollEnabledRef = useRef(false);
   useEffect(() => {
-    if (!isGenerating || userScrolledUp) return;
-    // 微延迟让 DOM 更新后再滚动
-    autoScrollTimerRef.current = setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-    }, 80);
-    return () => {
-      if (autoScrollTimerRef.current) clearTimeout(autoScrollTimerRef.current);
+    autoScrollEnabledRef.current = isGenerating && !userScrolledUp;
+  }, [isGenerating, userScrolledUp]);
+
+  useEffect(() => {
+    if (!autoScrollEnabledRef.current) return;
+    let rafId: number;
+    const scroll = () => {
+      if (autoScrollEnabledRef.current) {
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+        rafId = requestAnimationFrame(scroll);
+      }
     };
-  }, [renderedMessages.length, streamingMessage?.content, isGenerating, userScrolledUp]);
+    rafId = requestAnimationFrame(scroll);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     setUserScrolledUp(false);
@@ -545,12 +545,12 @@ export default function SessionChatPage() {
         </div>
 
         {/* ── 回到最下方按钮（用户上滑时显示） ── */}
-        {userScrolledUp && isGenerating && (
+        {userScrolledUp && (
           <div className="fixed bottom-28 left-1/2 z-20 -translate-x-1/2">
             <button
               type="button"
               onClick={scrollToBottom}
-              className="flex items-center gap-2 rounded-full border border-blue-300 bg-blue-50/95 px-4 py-2 text-xs font-medium text-blue-700 shadow-lg backdrop-blur transition-all hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-900/90 dark:text-blue-200"
+              className="flex items-center gap-2 rounded-full border-2 border-blue-400 bg-blue-500 px-4 py-2 text-xs font-semibold text-white shadow-xl backdrop-blur transition-all hover:bg-blue-600 active:scale-95 dark:border-blue-600 dark:bg-blue-600"
             >
               <ChevronDown className="h-4 w-4 animate-bounce" />
               回到最新回复
