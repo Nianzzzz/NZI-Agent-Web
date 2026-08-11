@@ -1,7 +1,7 @@
 # Engine Capabilities
 
 > **Audience**: anyone wondering "what can NZi Agent Web actually do
-> today?"
+> today, and which engine should I pick?"
 >
 > Read this if you opened the dashboard, sent a chat, and got either
 > a typewriter mock response or a real LLM answer and want to know
@@ -9,101 +9,117 @@
 
 ## TL;DR
 
-NZi Agent Web is **single-engine**: Pi Agent, backed by Aliyun Bailian's
-OpenAI-compatible API. When no API key is configured, a Mock adapter takes
-over so the UI still works. There is no engine switcher — the user never
-picks a backend.
+| Capability                            | Mock | Pi (Phase 1) | Pi (Phase 2) | Grok |
+| ------------------------------------- | :--: | :----------: | :----------: | :--: |
+| Streaming reply                       |  ✓   |      ✓       |      ✓       |  ✓   |
+| Thinking / chain-of-thought timeline  |  ✓   |      ✓       |      ✓       |  ✓   |
+| Answer node (final text)              |  ✓   |      ✓       |      ✓       |  ✓   |
+| **Tool calls** (read / bash / edit)   |  ✗   |      ✗       |      ✓       |  ✗   |
+| **Multi-turn memory across sessions** |  ✗   |      ✗       |      ✓       |  ✗   |
+| **Stop / interrupt**                  |  ✓   |      ✓       |      ✓       |  ✓   |
+| **Session tree (branch / fork)**      |  ✗   |      ✗       |      ✓       |  ✗   |
+| **Arena (side-by-side comparison)**   |  ✗   |      ✗       |      ✓       |  ✗   |
+| **Real-time collab (multi-cursor)**   |  ✗   |      ✗       |      ✓       |  ✗   |
 
-| Capability                            | Mock | Pi (today) | Pi (Phase 2) |
-| ------------------------------------- | :--: | :--------: | :----------: |
-| Streaming reply                       |  ✓   |     ✓      |      ✓       |
-| Thinking / chain-of-thought timeline  |  ✓   |     ✓      |      ✓       |
-| Answer node (final text)              |  ✓   |     ✓      |      ✓       |
-| **Stop / interrupt**                  |  ✓   |     ✓      |      ✓       |
-| **Multi-turn memory across sessions** |  ✗   |     ✓      |      ✓       |
-| **Tool calls** (read / bash / edit)   |  ✗   |     ✗      |      ✓       |
-| **Session tree (branch / fork)**      |  ✗   |     ✗      |      ✓       |
-| **Arena (side-by-side comparison)**   |  ✗   |     ✗      |      ✓       |
-| **Real-time collab (multi-cursor)**   |  ✗   |     ✗      |      ✓       |
-
-Shipped: streaming + timeline + stop + multi-turn context. Phase 2 (Q4 2026):
-tools, session tree, arena, collaboration.
+Phase 1 (shipped): streaming + timeline + stop. Phase 2 (Q4 2026):
+tools, memory, session tree, arena, collaboration.
 
 ---
 
 ## What The User Sees Today
 
-The user sends a prompt, watches the **AgentTimeline** render up to three
-kinds of cards (thinking / tool / answer), and gets a final answer in the
-message bubble. Mock and Pi emit the same event shape, so the UI is
-identical either way — only the content differs.
-
-### Pi Engine (`BailianAdapter`)
-
-- Active when `BAILIAN_API_KEY` is set in `packages/backend/.env`.
-- Talks to Bailian's OpenAI-compatible endpoint
-  (`https://dashscope.aliyuncs.com/compatible-mode/v1`), default model
-  `qwen-max-2025-01-25`.
-- Streams `reasoning_content` as thinking-node deltas and `content` as
-  answer-node deltas.
-- Multi-turn: the WS controller loads the last 20 messages from Postgres
-  and passes them as OpenAI-format `messages`.
-- Stop button aborts the in-flight fetch; whatever streamed so far is
-  persisted as an `INTERRUPTED` message.
+Whichever engine is selected, the **UI is identical**. The user
+sends a prompt, watches the **AgentTimeline** render three kinds of
+cards (thinking / tool / answer), and gets a final answer in the
+message bubble. The engine only differs in **what the cards actually
+contain** and **how trustworthy the output is**.
 
 ### Mock Engine (`MockEngineAdapter`)
 
-- Active when `BAILIAN_API_KEY` is missing — registered as the PI provider
-  so routing is unchanged.
-- Output: a scripted Chinese response streamed character-by-character,
-  with a fake thinking block and a conditional tool call.
-- Why we ship it: lets UI work proceed with zero external dependency, and
-  gives new users something to click before wiring up a key.
+- Active when: no `BAILIAN_API_KEY` is configured.
+- Output: a long Lorem-Ipsum-ish Chinese paragraph streamed at ~70
+  chars/sec with a fake "thinking…" block beforehand.
+- Why we ship it: lets the UI team build and test the AgentTimeline
+  with zero external dependency, and gives new users something to
+  click on before they wire up a real key.
 
-### Phase 2 (next up)
+### Pi Engine — Phase 1 (`BailianAdapter`)
 
-- Tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, with a
-  per-session whitelist in the UI.
-- Branching: fork any message into a new session branch; the session tree
+- Active when: `BAILIAN_API_KEY` is set in `packages/backend/.env`.
+- What it actually does today: pure chat. The adapter calls Bailian's
+  OpenAI-compatible API with the model configured via `BAILIAN_MODEL`
+  (default `qwen-plus`).
+- What you get: a real LLM streaming thinking + answer through the
+  same timeline UI. Stop button works (sends
+  `AbortController.abort()` into the SDK subscriber).
+- What's missing: file tools, long-term memory, ability to actually
+  _do_ anything beyond answering.
+
+### Pi Engine — Phase 2 (next up)
+
+- Tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`
+  (the Pi Agent built-ins). Per-session tool whitelist in the UI.
+- Memory: Pi Agent sessions persist to SQLite (`~/.pi/agent/sessions/`)
+  — we'll mirror that into the Postgres `messages` table so users can
+  browse history from the NZi dashboard.
+- Branching: Pi's session model supports forking; the session tree
   UI is the visible half of that.
-- Arena: run two models on the same prompt and compare timelines.
+
+### Grok Engine (`GrokAdapter`)
+
+- Active when: `BAILIAN_API_KEY` is set (shares the same key as Pi)
+  and `GROK_MODEL` is configured (default `qwen-turbo`).
+- Talks to the same Bailian OpenAI-compatible endpoint, but uses a
+  different model. Useful for comparing a fast model (Grok/turbo)
+  against a strong one (Pi/max) on the same prompt.
+- Phase 2 will add tool support and session memory.
 
 ---
 
-## Request Flow
+## Engine Selection Logic
 
-The frontend sends:
+The frontend sends `agentType` in the chat payload:
 
 ```ts
-{ type: "chat", payload: { sessionId, prompt, thinkingLevel } }
+{ type: "chat", payload: { sessionId, agentType: "PI" | "GROK", prompt } }
 ```
 
-The backend validates it with Zod, then
-[`engine-bridge.ts`](../../packages/backend/src/engine/engine-bridge.ts)
-calls `routePromptByProvider(EngineProvider.PI, options)`. Exactly one
-adapter is registered under `PI` at startup — Bailian if a key exists,
-Mock otherwise.
+The backend's [`engine-bridge.ts`](../../packages/backend/src/engine/engine-bridge.ts)
+calls `routePromptByProvider(EngineProvider[agentType], options)`,
+which picks the right adapter. The engine switcher on the session
+header lets the user pick per-message.
 
-If the engine errors mid-stream (rate limit, bad key, network), the WS
-sends an `error` event and the frontend shows a red banner. **There is no
-silent fallback to mock once Bailian is registered** — we want the user to
-see the real failure, not a typewriter response.
+If the chosen engine isn't healthy (no API key, SDK import failed,
+etc.), the adapter throws and the WS sends an `error` event — the
+frontend shows a red banner with the error message. **There is no
+silent fallback to mock** for the real engines; we want the user to
+see the missing-key problem, not a typewriter response.
+
+---
+
+## Picking An Engine
+
+| You want to…                                | Pick   | Why                                                    |
+| ------------------------------------------- | ------ | ------------------------------------------------------ |
+| Just kick the tires / develop the UI        | Mock   | Zero setup                                             |
+| Real LLM answers, single-turn Q&A           | Pi     | Cheapest, most providers, best default model selection |
+| Fast model for quick comparisons            | Grok   | Same Bailian key, different (faster) model             |
+| Tool use (read, bash, edit) — Phase 2       | Pi     | Only Pi has the SDK tool registry                      |
+| Multi-turn coding sessions — Phase 2        | Pi     | Pi's session + SQLite store                            |
+| Compare two models side by side — Phase 2   | Arena  | Run Pi and Grok in parallel, see both timelines        |
 
 ---
 
 ## Adding A New Engine
 
 1. Implement `IEngineAdapter` (see
-   [`shared-types/src/engine.ts`](../../packages/shared-types/src/engine.ts)).
-2. Add a new value to the `EngineProvider` enum (both the TS enum and the
-   Prisma enum in `prisma/schema.prisma`).
+   [`shared-types/src/engine.ts`](../../packages/shared-types/src/engine.ts#L107)).
+2. Add a new value to the `EngineProvider` enum.
 3. Register the adapter in
-   [`engine-bridge.ts`](../../packages/backend/src/engine/engine-bridge.ts)'s
-   `initializeAdapters`.
-4. Document it here.
+   [`engine/adapters/index.ts`](../../packages/backend/src/engine/adapters/index.ts).
+4. Add a row in the `engines` enum on the Prisma side so the
+   `Session.engine` column can hold the new value.
+5. Document the new engine here + add a setup section.
 
-That's the whole adapter contract. The frontend, WS protocol, timeline
-rendering, and persistence layer are engine-agnostic — note that reviving a
-user-facing engine switcher would also mean re-adding a provider field to
-the chat payload and session record, both of which were removed
-deliberately.
+That's all the adapter contract asks for. The frontend, WS protocol,
+timeline rendering, and persistence layer are engine-agnostic.

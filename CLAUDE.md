@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-NZi Agent Web — a multi-tenant AI agent workbench with a single Pi Agent engine (backed by Aliyun Bailian), session tree visualization, Arena, and real-time collaboration.
+NZi Agent Web — a multi-tenant AI agent workbench with dual-engine support (Pi Agent + Grok Agent), session tree visualization, Arena, and real-time collaboration.
 
 ## Current State
 
@@ -15,12 +15,12 @@ This repo is freshly initialized (git only, no application code yet). All techni
 - **Frontend**: Next.js 16 (App Router) + TypeScript + Tailwind CSS + React Flow + Monaco Editor
 - **Backend**: Node.js (Fastify) + Socket.io + BullMQ
 - **Database**: PostgreSQL (Prisma ORM) + Redis
-- **AI Engines**: Pi Agent SDK (Bailian OpenAI-compatible API), Mock fallback
+- **AI Engines**: Pi Agent SDK (Bailian OpenAI-compatible API), Grok Agent (Bailian API + independent model), Mock fallback
 
 ## Planned Architecture
 
 - WebSocket lazy-loading: send references only, cache full data in Redis
-- Engine bridge: adapters register under `EngineProvider` and emit a unified `AgentEvent` format
+- Dual-engine bridge: unified `AgentEvent` format across Pi and Grok
 - Multi-tenant isolation: per-user data, API keys encrypted with AES-256-GCM
 - Backend layers: Routes → Controllers → Services → Repositories
 - WebSocket event naming: `<domain>:<action>` (e.g., `node:fetch_content`)

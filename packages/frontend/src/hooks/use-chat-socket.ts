@@ -20,7 +20,7 @@ export interface UseChatSocketReturn {
   readonly streamingMessage: ChatMessage | null;
   readonly isGenerating: boolean;
   readonly currentRequestId: string | null;
-  readonly sendChat: (prompt: string, thinkingLevel?: "off" | "low" | "medium" | "high") => void;
+  readonly sendChat: (prompt: string, agentType?: "PI" | "GROK", thinkingLevel?: "off" | "low" | "medium" | "high") => void;
   readonly stopGeneration: () => void;
   readonly connect: () => void;
   readonly disconnect: () => void;
@@ -273,7 +273,7 @@ export function useChatSocket({
   }, [clearReconnect, setWebSocket, setConnectionStatus]);
 
   const sendChat = useCallback(
-    (prompt: string, thinkingLevel: "off" | "low" | "medium" | "high" = "off") => {
+    (prompt: string, agentType: "PI" | "GROK" = "PI", thinkingLevel: "off" | "low" | "medium" | "high" = "off") => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         onError?.("WebSocket is not connected");
@@ -309,7 +309,7 @@ export function useChatSocket({
       // 3. 发往 WS
       const message: unknown = {
         type: "chat",
-        payload: { sessionId, prompt, thinkingLevel },
+        payload: { sessionId, agentType, prompt, thinkingLevel },
       };
       ws.send(JSON.stringify(message));
       forceTick((n) => n + 1);

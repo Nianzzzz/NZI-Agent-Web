@@ -10,6 +10,7 @@ const API_BASE = ""; // 走 Next.js rewrite
 export interface SessionDetail {
   id: string;
   title: string | null;
+  engine: "PI" | "GROK";
   status: "ACTIVE" | "ARCHIVED" | "DELETED";
   createdAt: string;
   updatedAt: string;

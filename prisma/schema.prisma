@@ -85,6 +85,7 @@ model EngineConfig {
 
 enum EngineProvider {
   PI
+  GROK
 }
 
 enum ThinkingLevel {

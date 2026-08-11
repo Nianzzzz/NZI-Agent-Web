@@ -13,6 +13,7 @@
 import type { IEngineAdapter, PromptOptions, NZiAgentEvent } from "@nzi/shared-types";
 import { EngineProvider } from "@nzi/shared-types";
 import { BailianAdapter } from "./adapters/bailian-adapter.js";
+import { GrokAdapter } from "./adapters/grok-adapter.js";
 import { MockEngineAdapter } from "./adapters/mock-adapter.js";
 
 // ─── 注册表 ───────────────────────────────────────────────────────
@@ -52,19 +53,33 @@ export function getAllAdapters(): IEngineAdapter[] {
  * 初始化默认 Adapters
  *
  * 行为：
- * - 如果配置了 BAILIAN_API_KEY，用 BailianAdapter 作为 PI provider
- * - 否则注册 MockEngineAdapter 作为兜底
+ * - 如果配置了 BAILIAN_API_KEY，注册 BailianAdapter（PI）和 GrokAdapter（GROK）
+ *   两者共用百炼 API Key 和端点，但使用不同模型（PI=BAILIAN_MODEL，GROK=GROK_MODEL）
+ * - 否则注册 MockEngineAdapter 作为 PI 的兜底（GROK 不可用）
  */
 export async function initializeAdapters(
   extraAdapters: IEngineAdapter[] = [],
 ): Promise<void> {
-  try {
-    await registerAdapter(new BailianAdapter());
-    console.log(`[engine] ✓ BailianAdapter registered`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[engine] BailianAdapter unavailable: ${msg}`);
-    console.warn(`[engine] Falling back to MockAdapter`);
+  const hasBailianKey = !!process.env.BAILIAN_API_KEY;
+
+  if (hasBailianKey) {
+    try {
+      await registerAdapter(new BailianAdapter());
+      console.log(`[engine] ✓ BailianAdapter registered (PI)`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[engine] BailianAdapter unavailable: ${msg}`);
+    }
+
+    try {
+      await registerAdapter(new GrokAdapter());
+      console.log(`[engine] ✓ GrokAdapter registered (GROK)`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[engine] GrokAdapter unavailable: ${msg}`);
+    }
+  } else {
+    console.warn(`[engine] BAILIAN_API_KEY not set — registering MockAdapter as PI fallback`);
     try {
       await registerAdapter(new MockEngineAdapter(EngineProvider.PI));
       console.log(`[engine] ✓ MockAdapter registered (fallback)`);

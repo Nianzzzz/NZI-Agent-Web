@@ -30,10 +30,17 @@ import Markdown from "@/components/chat/Markdown";
 import { cn } from "@/lib/utils";
 
 const ENGINE_META = {
-  label: "Pi Agent",
-  gradient: "from-violet-500 to-fuchsia-600",
-  ring: "ring-violet-300/60",
-};
+  PI: {
+    label: "Pi Agent",
+    gradient: "from-violet-500 to-fuchsia-600",
+    ring: "ring-violet-300/60",
+  },
+  GROK: {
+    label: "Grok Agent",
+    gradient: "from-amber-500 to-orange-600",
+    ring: "ring-amber-300/60",
+  },
+} as const;
 
 /** 判断消息是否是 assistant 的最终回答（有实际内容） */
 function isAssistantAnswer(m: ChatMessage): boolean {
@@ -247,6 +254,7 @@ export default function SessionChatPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [draft, setDraft] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState<"off" | "low" | "medium" | "high">("off");
+  const [currentEngine, setCurrentEngine] = useState<"PI" | "GROK">("PI");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -302,6 +310,10 @@ export default function SessionChatPage() {
         }
 
         setSession(detail);
+        // 用会话的 engine 初始化当前引擎选择器
+        if (detail.engine === "PI" || detail.engine === "GROK") {
+          setCurrentEngine(detail.engine);
+        }
         replaceMessages(
           sessionId,
           history.map((m) => ({
@@ -379,7 +391,7 @@ export default function SessionChatPage() {
   const handleSend = useCallback(() => {
     const text = draft.trim();
     if (!text || isGenerating) return;
-    sendChat(text, thinkingLevel);
+    sendChat(text, currentEngine, thinkingLevel);
     setDraft("");
   }, [draft, isGenerating, sendChat, thinkingLevel]);
 
@@ -451,7 +463,7 @@ export default function SessionChatPage() {
     );
   }
 
-  const meta = ENGINE_META;
+  const meta = ENGINE_META[currentEngine];
 
   return (
     <div className="flex h-screen flex-col bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30">
@@ -492,6 +504,12 @@ export default function SessionChatPage() {
               <ConnectionPill status={connectionStatus} />
               <span>·</span>
               <ThinkingLevelPill value={thinkingLevel} onChange={setThinkingLevel} disabled={isGenerating} />
+              <span>·</span>
+              <EngineSwitcher
+                value={currentEngine}
+                onChange={setCurrentEngine}
+                disabled={isGenerating}
+              />
             </div>
           </div>
         </div>
@@ -641,6 +659,45 @@ function ThinkingLevelPill({
             disabled && "pointer-events-none opacity-40",
           )}
           title={`思维链级别：${opt.label}`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+function EngineSwitcher({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: "PI" | "GROK";
+  onChange: (v: "PI" | "GROK") => void;
+  disabled?: boolean;
+}) {
+  const OPTIONS: { key: "PI" | "GROK"; label: string; gradient: string }[] = [
+    { key: "PI", label: "Pi", gradient: "from-violet-500 to-fuchsia-600" },
+    { key: "GROK", label: "Grok", gradient: "from-amber-500 to-orange-600" },
+  ];
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Cpu className="h-3 w-3 text-muted-foreground" />
+      {OPTIONS.map((opt) => (
+        <button
+          key={opt.key}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(opt.key)}
+          className={cn(
+            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition",
+            `bg-gradient-to-r ${opt.gradient}`,
+            value === opt.key
+              ? "ring-2 ring-offset-1 ring-blue-400 dark:ring-offset-slate-950 text-white"
+              : "opacity-50 hover:opacity-80 text-white/80",
+            disabled && "pointer-events-none opacity-30",
+          )}
+          title={`切换引擎：${opt.label}`}
         >
           {opt.label}
         </button>

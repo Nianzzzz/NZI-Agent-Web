@@ -14,6 +14,8 @@ export type ClientMessageType = "chat" | "stop";
 /** 客户端 -> 服务端：发起对话 */
 export interface ChatMessagePayload {
   sessionId: string;
+  /** 引擎类型，默认 "PI" */
+  agentType?: "PI" | "GROK";
   prompt: string;
   /** 思维链级别（默认 "off"） */
   thinkingLevel?: "off" | "low" | "medium" | "high";
@@ -43,6 +45,8 @@ export type ServerMessageType =
 export interface ServerStatusPayload {
   /** 当前请求的上下文 ID */
   requestId?: string;
+  /** 引擎类型 PI / GROK */
+  agentType?: "PI" | "GROK";
   /** 状态描述 */
   text?: string;
 }
@@ -137,6 +141,7 @@ export interface ServerMessage {
 /** 入站 chat 消息 payload：限制 prompt 长度、枚举值 */
 export const ChatPayloadSchema = z.object({
   sessionId: z.string().min(1, "sessionId 不能为空"),
+  agentType: z.enum(["PI", "GROK"]).optional().default("PI"),
   prompt: z
     .string()
     .min(1, "prompt 不能为空")

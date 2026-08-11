@@ -11,6 +11,7 @@ export interface CreateSessionInput {
   tenantId: string;
   userId: string;
   title?: string;
+  engine?: "PI" | "GROK";
 }
 
 export interface CreateMessageInput {
@@ -41,6 +42,7 @@ export class SessionService {
         tenantId: input.tenantId,
         userId: input.userId,
         title: input.title ?? "新会话",
+        engine: input.engine ?? "PI",
         status: "ACTIVE",
       },
       include: {

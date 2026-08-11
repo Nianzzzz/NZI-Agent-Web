@@ -11,8 +11,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useAuthStore } from "@/lib/auth-store";
 import { useSessionStore } from "@/lib/session-store";
 
-const ENGINE_LABEL = "Pi Agent";
-const ENGINE_GRADIENT = "from-violet-500 to-fuchsia-600";
+const ENGINE_LABELS: Record<string, string> = {
+  PI: "Pi Agent",
+  GROK: "Grok Agent",
+};
+
+const ENGINE_GRADIENTS: Record<string, string> = {
+  PI: "from-violet-500 to-fuchsia-600",
+  GROK: "from-amber-500 to-orange-600",
+};
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
@@ -46,7 +53,7 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-sm font-semibold leading-tight text-foreground">NZi Agent</p>
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Agent workbench</p>
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Multi-engine workbench</p>
             </div>
           </Link>
 
@@ -74,7 +81,7 @@ export default function DashboardPage() {
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Your sessions</h1>
           <p className="text-sm text-muted-foreground">
-            Manage and continue your Pi Agent conversations.
+            Manage and continue conversations across Pi Agent and Grok Agent engines.
           </p>
         </div>
 
@@ -147,7 +154,7 @@ export default function DashboardPage() {
                 key={session.id}
                 className="group relative overflow-hidden border-slate-200/60 bg-white/80 transition-all hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-lg hover:shadow-blue-500/10 dark:border-slate-800/60 dark:bg-slate-900/80 dark:hover:border-blue-700"
               >
-                <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${ENGINE_GRADIENT}`} />
+                <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${ENGINE_GRADIENTS[session.engine ?? "PI"]}`} />
 
                 <CardContent className="space-y-3 pt-5">
                   <Link href={`/dashboard/session/${session.id}`} className="block space-y-2">
@@ -156,10 +163,10 @@ export default function DashboardPage() {
                     </h3>
                     <div className="flex items-center gap-1.5">
                       <span
-                        className={`inline-flex items-center gap-1 rounded-full bg-gradient-to-r px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white ${ENGINE_GRADIENT}`}
+                        className={`inline-flex items-center gap-1 rounded-full bg-gradient-to-r px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white ${ENGINE_GRADIENTS[session.engine ?? "PI"]}`}
                       >
                         <Cpu className="h-2.5 w-2.5" />
-                        {ENGINE_LABEL}
+                        {ENGINE_LABELS[session.engine ?? "PI"]}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">

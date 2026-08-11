@@ -22,12 +22,16 @@ export class SessionController {
       return reply.status(401).send({ error: "未登录或登录已过期" });
     }
 
-    const { title } = req.body as { title?: string };
+    const { title, engine } = req.body as {
+      title?: string;
+      engine?: "PI" | "GROK";
+    };
 
     const session = await this.sessionService.createSession({
       tenantId: user.tenantId,
       userId: user.sub,
       title,
+      engine,
     });
 
     return reply.status(201).send(session);

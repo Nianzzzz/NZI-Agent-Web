@@ -185,6 +185,7 @@ export class WsChatController {
             tenantUser,
             payload as {
               sessionId: string;
+              agentType?: "PI" | "GROK";
               prompt: string;
               thinkingLevel?: "off" | "low" | "medium" | "high";
             },
@@ -221,14 +222,14 @@ export class WsChatController {
   private async handleChat(
     socket: WebSocket,
     user: TokenPayload,
-    payload: { sessionId: string; prompt: string; thinkingLevel?: "off" | "low" | "medium" | "high" },
+    payload: { sessionId: string; agentType?: "PI" | "GROK"; prompt: string; thinkingLevel?: "off" | "low" | "medium" | "high" },
     activeRequests: Map<
       string,
       RequestContext & { sessionId: string; rootEventId?: string; provider: EngineProvider }
     >,
   ) {
-    const { sessionId, prompt, thinkingLevel = "off" } = payload;
-    const provider = EngineProvider.PI;
+    const { sessionId, prompt, agentType = "PI", thinkingLevel = "off" } = payload;
+    const provider = EngineProvider[agentType as keyof typeof EngineProvider] ?? EngineProvider.PI;
 
     // 唯一请求 ID，前端 stop 时传入此 ID 中断
     const requestId = crypto.randomUUID();
@@ -259,7 +260,7 @@ export class WsChatController {
     // ─── 发送 status ────────────────────────────────────────────
     this.sendSocket(socket, {
       type: "status",
-      payload: { requestId, text: "thinking..." },
+      payload: { requestId, agentType, text: "thinking..." },
     } satisfies ServerMessage);
 
     // ─── 流式调用引擎 ───────────────────────────────────────────
