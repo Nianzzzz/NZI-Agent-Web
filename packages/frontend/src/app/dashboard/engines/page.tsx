@@ -100,12 +100,12 @@ const ENGINES = [
     name: "Grok Agent",
     icon: Zap,
     gradient: "from-amber-500 to-orange-600",
-    blurb: "Direct pass-through to the xAI / Grok API. Same timeline UI as Pi.",
-    status: "phase-1",
+    blurb: "复用百炼 API 的第二个引擎，可配置不同模型。与 Pi 共享同一套 API Key。",
+    status: "shipped",
     setup: [
-      "Set XAI_API_KEY in packages/backend/.env.",
-      "Restart the backend.",
-      "Use agentType=GROK in the chat payload (UI selector coming in Phase 2).",
+      "已配置 BAILIAN_API_KEY 即可使用。",
+      "通过 GROK_MODEL 环境变量指定模型（默认 qwen-plus）。",
+      "在会话中切换到 Grok 引擎即可。",
     ],
   },
 ] as const;

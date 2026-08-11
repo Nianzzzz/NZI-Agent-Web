@@ -1,14 +1,13 @@
 /**
- * Grok (xAI) Engine Adapter
+ * Grok Engine Adapter（复用百炼 API）
  *
- * 用途：通过 OpenAI 兼容接口接入 xAI 平台的 Grok 模型（如 grok-2、grok-3 等）。
- *
- * xAI 提供 OpenAI-compatible API（/v1/chat/completions），因此复用 OpenAI SDK。
+ * 用途：通过阿里云百炼 OpenAI 兼容接口接入 Grok 模型。
+ * 与 BailianAdapter 共用相同的 API Key 和 Base URL，仅模型不同。
  *
  * 环境变量（均在 packages/backend/.env 中配置）：
- *   XAI_API_KEY      必填 — xAI API Key（xai-xxx）
- *   XAI_BASE_URL     选填 — xAI OpenAI 兼容端点，默认 https://api.x.ai/v1
- *   XAI_MODEL        选填 — 模型 ID，默认 grok-3-mini-beta
+ *   BAILIAN_API_KEY    必填 — 百炼 API Key（sk-xxx）
+ *   BAILIAN_BASE_URL   选填 — 百炼 OpenAI 兼容端点，默认 https://dashscope.aliyuncs.com/compatible-mode/v1
+ *   GROK_MODEL         选填 — Grok 使用的模型 ID，默认 qwen-plus
  *
  * 多轮上下文：Controller 通过 PromptOptions.messages 传入历史消息，
  * GrokAdapter 将其拼入 messages 数组一并发送。
@@ -18,13 +17,13 @@ import type { IEngineAdapter, NZiAgentEvent, PromptOptions, ChatCompletionMessag
 import { AgentEventType, EngineProvider } from "@nzi/shared-types";
 import OpenAI from "openai";
 
-const DEFAULT_BASE_URL = "https://api.x.ai/v1";
-const DEFAULT_MODEL = "grok-3-mini-beta";
+const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+const DEFAULT_MODEL = "qwen-plus";
 const MAX_HISTORY_MESSAGES = 20;
 const STREAM_TIMEOUT_MS = 120_000;
 
 /**
- * GrokAdapter — xAI OpenAI 兼容适配器
+ * GrokAdapter — 百炼 OpenAI 兼容适配器（Grok 引擎）
  *
  * 事件流（与 Bailian/Mock 保持一致）：
  *   AGENT_START → MESSAGE_START(thinking) → [THINKING deltas] → MESSAGE_END(thinking)
@@ -38,11 +37,11 @@ export class GrokAdapter implements IEngineAdapter {
   // ─── IEngineAdapter 实现 ────────────────────────────────────────
 
   async initialize(): Promise<void> {
-    const apiKey = process.env.XAI_API_KEY;
+    const apiKey = process.env.BAILIAN_API_KEY;
     if (!apiKey) {
-      throw new Error("XAI_API_KEY not set — GrokAdapter unavailable");
+      throw new Error("BAILIAN_API_KEY not set — GrokAdapter unavailable");
     }
-    const baseURL = process.env.XAI_BASE_URL ?? DEFAULT_BASE_URL;
+    const baseURL = process.env.BAILIAN_BASE_URL ?? DEFAULT_BASE_URL;
     this._client = new OpenAI({
       apiKey,
       baseURL,
@@ -52,7 +51,7 @@ export class GrokAdapter implements IEngineAdapter {
 
   async isAvailable(): Promise<boolean> {
     if (this._client) return true;
-    return !!process.env.XAI_API_KEY;
+    return !!process.env.BAILIAN_API_KEY;
   }
 
   async *streamPrompt(options: PromptOptions): AsyncIterable<NZiAgentEvent> {
@@ -64,7 +63,7 @@ export class GrokAdapter implements IEngineAdapter {
     const traceId = crypto.randomUUID();
     const nodeId = `grok_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const startTime = Date.now();
-    const model = process.env.XAI_MODEL ?? DEFAULT_MODEL;
+    const model = process.env.GROK_MODEL ?? DEFAULT_MODEL;
 
     // ─── AGENT_START ───────────────────────────────────────────
     yield {
@@ -253,10 +252,10 @@ export class GrokAdapter implements IEngineAdapter {
 
   async healthCheck(): Promise<{ healthy: boolean; latencyMs: number; detail?: string }> {
     const start = Date.now();
-    if (!process.env.XAI_API_KEY) {
-      return { healthy: false, latencyMs: Date.now() - start, detail: "XAI_API_KEY not configured" };
+    if (!process.env.BAILIAN_API_KEY) {
+      return { healthy: false, latencyMs: Date.now() - start, detail: "BAILIAN_API_KEY not configured" };
     }
-    return { healthy: true, latencyMs: Date.now() - start, detail: "GrokAdapter ready" };
+    return { healthy: true, latencyMs: Date.now() - start, detail: "GrokAdapter ready (Bailian API)" };
   }
 
   // ─── 内部方法 ──────────────────────────────────────────────────
