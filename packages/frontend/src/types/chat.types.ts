@@ -11,8 +11,9 @@ export type ClientMessageType = "chat" | "stop";
 
 export interface ChatPayload {
   sessionId: string;
-  agentType?: "PI" | "GROK";
   prompt: string;
+  /** 思维链级别（默认 "off"） */
+  thinkingLevel?: "off" | "low" | "medium" | "high";
 }
 
 export interface StopPayload {
@@ -36,7 +37,6 @@ export type ServerMessageType =
 
 export interface StatusPayload {
   requestId: string;
-  agentType?: "PI" | "GROK";
   text?: string;
 }
 

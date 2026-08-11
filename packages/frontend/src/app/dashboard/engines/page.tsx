@@ -1,7 +1,7 @@
 /**
- * NZi Agent Web — Engines capability page
+ * NZi Agent Web — Engine capability page
  *
- * Tells the user what each engine can do today, what Phase 2 will add,
+ * Tells the user what the engine can do today, what Phase 2 will add,
  * and how to wire up a real API key. Mirrors
  * `docs/knowledge/engine-capabilities.md`.
  */
@@ -10,7 +10,7 @@
 
 import Link from "next/link";
 import {
-  ArrowLeft, Bot, Brain, Wrench, MessageSquare, Sparkles, Cpu, Zap,
+  ArrowLeft, Bot, Brain, Wrench, MessageSquare, Sparkles, Cpu,
   CheckCircle2, XCircle, Clock, ExternalLink, Server, BookOpen,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,95 +22,80 @@ interface Capability {
   readonly mock: boolean;
   readonly piPhase1: boolean;
   readonly piPhase2: boolean;
-  readonly grok: boolean;
 }
 
 const CAPABILITIES: Capability[] = [
   {
     name: "Streaming reply",
     description: "Tokens arrive incrementally instead of waiting for the full answer.",
-    mock: true, piPhase1: true, piPhase2: true, grok: true,
+    mock: true, piPhase1: true, piPhase2: true,
   },
   {
     name: "Thinking timeline",
     description: "Reasoning steps render as foldable cards under the answer.",
-    mock: true, piPhase1: true, piPhase2: true, grok: true,
+    mock: true, piPhase1: true, piPhase2: true,
   },
   {
     name: "Stop / interrupt",
     description: "Abort an in-flight request and persist whatever streamed so far.",
-    mock: true, piPhase1: true, piPhase2: true, grok: true,
-  },
-  {
-    name: "Tool calls (read / bash / edit)",
-    description: "Agent can read files, run shell, edit code, and act on the workspace.",
-    mock: false, piPhase1: false, piPhase2: true, grok: false,
+    mock: true, piPhase1: true, piPhase2: true,
   },
   {
     name: "Multi-turn memory",
     description: "Sessions persist across page reloads; previous turns stay in context.",
-    mock: false, piPhase1: false, piPhase2: true, grok: false,
+    mock: false, piPhase1: true, piPhase2: true,
+  },
+  {
+    name: "Tool calls (read / bash / edit)",
+    description: "Agent can read files, run shell, edit code, and act on the workspace.",
+    mock: false, piPhase1: false, piPhase2: true,
   },
   {
     name: "Session tree (branch / fork)",
     description: "Fork any message into a new branch, then compare two branches side by side.",
-    mock: false, piPhase1: false, piPhase2: true, grok: false,
+    mock: false, piPhase1: false, piPhase2: true,
   },
   {
     name: "Arena (side-by-side)",
-    description: "Run two engines on the same prompt and compare answers in one view.",
-    mock: false, piPhase1: false, piPhase2: true, grok: true,
+    description: "Run two models on the same prompt and compare answers in one view.",
+    mock: false, piPhase1: false, piPhase2: true,
   },
   {
     name: "Real-time collaboration",
     description: "Multiple cursors and live presence in the same session.",
-    mock: false, piPhase1: false, piPhase2: true, grok: false,
+    mock: false, piPhase1: false, piPhase2: true,
   },
 ];
 
 const ENGINES = [
   {
-    key: "mock",
-    name: "Mock",
-    icon: Sparkles,
-    gradient: "from-slate-500 to-slate-700",
-    blurb: "Typewriter fallback. No API key required. Useful for UI work and demos.",
-    status: "shipped",
-    setup: [
-      "Already wired — no setup needed.",
-      "Active when no real API key is configured or when you explicitly pick it.",
-    ],
-  },
-  {
     key: "pi",
     name: "Pi Agent",
     icon: Brain,
     gradient: "from-violet-500 to-fuchsia-600",
-    blurb: "Wraps the Pi Agent SDK. Pure chat today; tool use + memory in Phase 2.",
-    status: "phase-1",
+    blurb: "默认引擎。走阿里云百炼 OpenAI 兼容接口，支持流式回复、推理时间线、多轮上下文。",
+    status: "shipped",
     setup: [
-      "Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, XAI_API_KEY, …",
-      "Write the key to packages/backend/.env (gitignored).",
-      "Restart the backend: pnpm --filter backend dev.",
-      "Default model is the provider's flagship (e.g. Anthropic → claude-opus-4-7).",
+      "在 packages/backend/.env 里设置 BAILIAN_API_KEY（sk-xxx，已 gitignore）。",
+      "可选 BAILIAN_MODEL 覆盖模型（默认 qwen-max-2025-01-25）。",
+      "可选 BAILIAN_BASE_URL 覆盖端点（默认百炼 compatible-mode/v1）。",
+      "重启后端：pnpm --filter backend dev。",
     ],
   },
   {
-    key: "grok",
-    name: "Grok Agent",
-    icon: Zap,
-    gradient: "from-amber-500 to-orange-600",
-    blurb: "复用百炼 API 的第二个引擎，可配置不同模型。与 Pi 共享同一套 API Key。",
+    key: "mock",
+    name: "Mock",
+    icon: Sparkles,
+    gradient: "from-slate-500 to-slate-700",
+    blurb: "打字机兜底引擎，无需 API Key。BAILIAN_API_KEY 缺失时自动接管，适合 UI 调试和演示。",
     status: "shipped",
     setup: [
-      "已配置 BAILIAN_API_KEY 即可使用。",
-      "通过 GROK_MODEL 环境变量指定模型（默认 qwen-plus）。",
-      "在会话中切换到 Grok 引擎即可。",
+      "无需配置 —— 已内置。",
+      "未配置 BAILIAN_API_KEY 时自动启用。",
+      "事件流与真实引擎一致（thinking → tool → answer）。",
     ],
   },
 ] as const;
-
-type EngineKey = (typeof ENGINES)[number]["key"];
 
 function StatusMark({ value }: { value: boolean }) {
   if (value) {
@@ -140,7 +125,7 @@ export default function EnginesPage() {
             </div>
             <div>
               <p className="text-sm font-semibold leading-tight text-foreground">NZi Agent</p>
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Multi-engine workbench</p>
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Agent workbench</p>
             </div>
           </Link>
 
@@ -159,15 +144,15 @@ export default function EnginesPage() {
             <Cpu className="h-4 w-4" />
             <span>Engine capabilities</span>
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">What can each engine do?</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">What can the engine do?</h1>
           <p className="text-sm text-muted-foreground">
-            NZi Agent Web is engine-agnostic. Pick the backend that fits the task — the UI,
-            timeline, and stop button are identical across all of them.
+            NZi Agent Web 目前是单引擎架构：Pi Agent（百炼后端）。未配置 API Key 时自动
+            回退到 Mock —— UI、时间线、停止按钮在两者之间完全一致。
           </p>
         </div>
 
         {/* Engine cards */}
-        <div className="mb-10 grid gap-4 lg:grid-cols-3">
+        <div className="mb-10 grid gap-4 lg:grid-cols-2">
           {ENGINES.map(({ key, name, icon: Icon, gradient, blurb, status, setup }) => (
             <Card key={key} className="relative overflow-hidden border-slate-200/60 bg-white/80 dark:border-slate-800/60 dark:bg-slate-900/80">
               <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${gradient}`} />
@@ -228,9 +213,6 @@ export default function EnginesPage() {
                     <th className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Pi · P2
                     </th>
-                    <th className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Grok
-                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -243,7 +225,6 @@ export default function EnginesPage() {
                       <td className="px-2 py-2.5 text-center"><StatusMark value={cap.mock} /></td>
                       <td className="px-2 py-2.5 text-center"><StatusMark value={cap.piPhase1} /></td>
                       <td className="px-2 py-2.5 text-center"><StatusMark value={cap.piPhase2} /></td>
-                      <td className="px-2 py-2.5 text-center"><StatusMark value={cap.grok} /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -260,9 +241,9 @@ export default function EnginesPage() {
                 <Clock className="h-3.5 w-3.5" />
                 Today
               </div>
-              <p className="text-sm font-medium text-foreground">Streaming + timeline + stop</p>
+              <p className="text-sm font-medium text-foreground">Streaming + timeline + stop + 多轮上下文</p>
               <p className="text-xs text-muted-foreground">
-                All three engines render the same three-card timeline: thinking, tool, answer.
+                两个引擎渲染同一套三段式时间线：thinking、tool、answer。
               </p>
             </CardContent>
           </Card>
@@ -272,10 +253,10 @@ export default function EnginesPage() {
                 <MessageSquare className="h-3.5 w-3.5" />
                 Phase 2 · Q4 2026
               </div>
-              <p className="text-sm font-medium text-foreground">Tools, memory, branching, arena</p>
+              <p className="text-sm font-medium text-foreground">Tools, branching, arena</p>
               <p className="text-xs text-muted-foreground">
-                Pi's tool registry (read / bash / edit / write / grep / find / ls) goes live;
-                sessions get a tree view; Arena lets two models compete side by side.
+                工具注册表（read / bash / edit / write / grep / find / ls）上线；
+                会话获得树视图；Arena 让两个模型同题竞技。
               </p>
             </CardContent>
           </Card>

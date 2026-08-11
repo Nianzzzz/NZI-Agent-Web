@@ -4,7 +4,6 @@ import { useAuthStore } from "./auth-store";
 export interface Session {
   id: string;
   title: string | null;
-  engine: "PI" | "GROK";
   status?: string;
   metadata?: Record<string, unknown> | null;
   createdAt: string;
@@ -25,7 +24,7 @@ interface SessionActions {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   fetchSessions: () => Promise<void>;
-  createSession: (params: { title?: string; engine?: "PI" | "GROK" }) => Promise<Session>;
+  createSession: (params: { title?: string }) => Promise<Session>;
 }
 
 export const useSessionStore = create<SessionState & SessionActions>((set, get) => ({
@@ -89,7 +88,7 @@ export const useSessionStore = create<SessionState & SessionActions>((set, get) 
     }
   },
 
-  createSession: async ({ title, engine = "PI" }) => {
+  createSession: async ({ title }) => {
     const token = useAuthStore.getState().token;
     if (!token) {
       throw new Error("未登录");
@@ -102,7 +101,7 @@ export const useSessionStore = create<SessionState & SessionActions>((set, get) 
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ title, engine }),
+        body: JSON.stringify({ title }),
       });
       if (!response.ok) {
         const errBody = await response.text();

@@ -7,7 +7,7 @@ import {
 /**
  * T003.2 — Event Normalizer 基接口与 Pi 实现
  *
- * 职责：将各 Agent 的原生事件流（Pi AgentEvent、Grok AgentMessage 等）
+ * 职责：将各 Agent 的原生事件流（如 Pi AgentEvent）
  * 统一转换为 NZi 标准 NZiAgentEvent 格式。
  *
  * 设计原则：
@@ -38,10 +38,10 @@ export interface NormalizerContext {
 /**
  * IEventNormalizer — 所有 Agent 事件标准化器的基接口。
  *
- * 未来 Grok Normalizer 只需实现此接口：
- *   class GrokEventNormalizer implements IEventNormalizer { ... }
+ * 未来新增引擎的 Normalizer 只需实现此接口：
+ *   class XxxEventNormalizer implements IEventNormalizer { ... }
  *
- * @template T 原生事件的入站类型（Pi = AgentEvent, Grok = AgentMessage）
+ * @template T 原生事件的入站类型（Pi = AgentEvent）
  */
 export interface IEventNormalizer<T = unknown> {
   /**
@@ -261,4 +261,4 @@ export class PiEventNormalizer implements IEventNormalizer<PiNativeEvent> {
 // 为什么不把拼接放在 Normalizer 里？
 // - Normalizer 是无状态的纯函数，每帧独立
 // - 拼接是「跨帧状态管理」，属于 Adapter/Controller 的职责
-// - 这样 Grok Normalizer 同样保持无状态，接口一致
+// - 这样后续引擎的 Normalizer 同样保持无状态，接口一致

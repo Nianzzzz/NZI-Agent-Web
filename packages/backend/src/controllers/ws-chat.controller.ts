@@ -8,7 +8,7 @@
  * - 支持 AbortController 中断与断线续断（残卷入库）
  *
  * 安全：
- * - 入站消息经 Zod 校验（prompt ≤ 10k 字符，agentType/thinkingLevel 枚举限制）
+ * - 入站消息经 Zod 校验（prompt ≤ 10k 字符，thinkingLevel 枚举限制）
  * - 每 socket 独立速率计数器（60s 内 ≤ 10 条 chat、≤ 30 条 stop）
  * - maxPayload 由插件层限制为 1 MiB
  *
@@ -105,7 +105,7 @@ export class WsChatController {
       RequestContext & {
         sessionId: string;
         rootEventId?: string;
-        provider: "PI" | "GROK";
+        provider: EngineProvider;
       }
     >();
 
@@ -185,7 +185,6 @@ export class WsChatController {
             tenantUser,
             payload as {
               sessionId: string;
-              agentType?: "PI" | "GROK";
               prompt: string;
               thinkingLevel?: "off" | "low" | "medium" | "high";
             },
@@ -222,14 +221,14 @@ export class WsChatController {
   private async handleChat(
     socket: WebSocket,
     user: TokenPayload,
-    payload: { sessionId: string; agentType?: "PI" | "GROK"; prompt: string; thinkingLevel?: "off" | "low" | "medium" | "high" },
+    payload: { sessionId: string; prompt: string; thinkingLevel?: "off" | "low" | "medium" | "high" },
     activeRequests: Map<
       string,
-      RequestContext & { sessionId: string; rootEventId?: string; provider: "PI" | "GROK" }
+      RequestContext & { sessionId: string; rootEventId?: string; provider: EngineProvider }
     >,
   ) {
-    const { sessionId, prompt, agentType = "PI", thinkingLevel = "off" } = payload;
-    const provider = EngineProvider[agentType as keyof typeof EngineProvider] ?? EngineProvider.PI;
+    const { sessionId, prompt, thinkingLevel = "off" } = payload;
+    const provider = EngineProvider.PI;
 
     // 唯一请求 ID，前端 stop 时传入此 ID 中断
     const requestId = crypto.randomUUID();
@@ -260,7 +259,7 @@ export class WsChatController {
     // ─── 发送 status ────────────────────────────────────────────
     this.sendSocket(socket, {
       type: "status",
-      payload: { requestId, agentType: agentType, text: "thinking..." },
+      payload: { requestId, text: "thinking..." },
     } satisfies ServerMessage);
 
     // ─── 流式调用引擎 ───────────────────────────────────────────
@@ -275,7 +274,7 @@ export class WsChatController {
       nodes,
       sessionId,
       rootEventId,
-      provider: agentType,
+      provider,
     });
 
     // ─── 多轮上下文：取最近历史消息（不含刚写入的 USER 提问） ───
@@ -484,7 +483,7 @@ export class WsChatController {
     payload: { requestId: string },
     activeRequests: Map<
       string,
-      RequestContext & { sessionId: string; rootEventId?: string; provider: "PI" | "GROK" }
+      RequestContext & { sessionId: string; rootEventId?: string; provider: EngineProvider }
     >,
   ) {
     const ctx = activeRequests.get(payload.requestId);
@@ -531,7 +530,7 @@ export class WsChatController {
   private handleDisconnect(
     activeRequests: Map<
       string,
-      RequestContext & { sessionId: string; rootEventId?: string; provider: "PI" | "GROK" }
+      RequestContext & { sessionId: string; rootEventId?: string; provider: EngineProvider }
     >,
   ) {
     for (const [requestId, ctx] of activeRequests) {

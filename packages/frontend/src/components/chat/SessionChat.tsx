@@ -42,7 +42,7 @@ export default function SessionChat({ sessionId, token }: SessionChatProps) {
   const handleSend = useCallback(
     (prompt: string) => {
       setCurrentPrompt(prompt);
-      sendChat(prompt, "PI");
+      sendChat(prompt);
     },
     [sendChat],
   );

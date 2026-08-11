@@ -26,14 +26,15 @@
 ## Why This Document Exists
 
 NZi Agent Web is engine-agnostic. The backend exposes a unified
-`IEngineAdapter` interface, and currently ships two adapters:
+`IEngineAdapter` interface, and currently ships:
 
-- `PiAdapter` — wraps Pi Agent SDK (preferred for coding tasks)
-- `GrokAdapter` — talks to xAI / Grok directly
-- `MockAdapter` — fallback that streams fake typewriter output (so the UI
-  is testable without any API key)
+- `BailianAdapter` — the default `PI` engine, talks to Aliyun Bailian's
+  OpenAI-compatible API
+- `PiAdapter` — wraps the Pi Agent SDK (kept for the Phase 2 tool path)
+- `MockEngineAdapter` — fallback that streams fake typewriter output (so the
+  UI is testable without any API key)
 
-This document covers the **Pi** path. For the engine comparison see
+This document covers the **Pi Agent SDK** path. For what ships today see
 [`engine-capabilities.md`](./engine-capabilities.md).
 
 ---
@@ -85,7 +86,7 @@ for the full list see
 | **Anthropic**     | `ANTHROPIC_API_KEY`    | Default: `claude-opus-4-7`                         |
 | **OpenAI**        | `OPENAI_API_KEY`       | Default: `gpt-5.6` (Sol/Terra/Luna)                |
 | **DeepSeek**      | `DEEPSEEK_API_KEY`     | Cheap, good for code                               |
-| **xAI (Grok)**    | `XAI_API_KEY`          | Already declared in `.env.example`                 |
+| **xAI (Grok)**    | `XAI_API_KEY`          | Supported by the SDK, not wired in NZi             |
 | **OpenRouter**    | `OPENROUTER_API_KEY`   | Aggregator, many models                            |
 | **Google Gemini** | `GEMINI_API_KEY`       |                                                    |
 | **Mistral**       | `MISTRAL_API_KEY`      |                                                    |

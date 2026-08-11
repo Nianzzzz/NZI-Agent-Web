@@ -29,17 +29,10 @@ import AgentTimeline from "@/components/chat/AgentTimeline";
 import Markdown from "@/components/chat/Markdown";
 import { cn } from "@/lib/utils";
 
-const ENGINE_META: Record<"PI" | "GROK", { label: string; gradient: string; ring: string }> = {
-  PI: {
-    label: "Pi Agent",
-    gradient: "from-violet-500 to-fuchsia-600",
-    ring: "ring-violet-300/60",
-  },
-  GROK: {
-    label: "Grok Agent",
-    gradient: "from-amber-500 to-orange-600",
-    ring: "ring-amber-300/60",
-  },
+const ENGINE_META = {
+  label: "Pi Agent",
+  gradient: "from-violet-500 to-fuchsia-600",
+  ring: "ring-violet-300/60",
 };
 
 /** 判断消息是否是 assistant 的最终回答（有实际内容） */
@@ -386,9 +379,9 @@ export default function SessionChatPage() {
   const handleSend = useCallback(() => {
     const text = draft.trim();
     if (!text || isGenerating) return;
-    sendChat(text, (session?.engine ?? "PI") as "PI" | "GROK", thinkingLevel);
+    sendChat(text, thinkingLevel);
     setDraft("");
-  }, [draft, isGenerating, sendChat, session?.engine, thinkingLevel]);
+  }, [draft, isGenerating, sendChat, thinkingLevel]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -458,8 +451,7 @@ export default function SessionChatPage() {
     );
   }
 
-  const engine = (session?.engine ?? "PI") as "PI" | "GROK";
-  const meta = ENGINE_META[engine];
+  const meta = ENGINE_META;
 
   return (
     <div className="flex h-screen flex-col bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30">
@@ -498,12 +490,8 @@ export default function SessionChatPage() {
               </span>
               <span>·</span>
               <ConnectionPill status={connectionStatus} />
-              {engine === "PI" && (
-                <>
-                  <span>·</span>
-                  <ThinkingLevelPill value={thinkingLevel} onChange={setThinkingLevel} disabled={isGenerating} />
-                </>
-              )}
+              <span>·</span>
+              <ThinkingLevelPill value={thinkingLevel} onChange={setThinkingLevel} disabled={isGenerating} />
             </div>
           </div>
         </div>

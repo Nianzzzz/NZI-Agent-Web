@@ -69,7 +69,7 @@ model EngineConfig {
   id               String        @id @default(cuid())
   tenantId         String
   tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  provider         EngineProvider // PI | GROK
+  provider         EngineProvider
   apiKeyEncrypted  String?
   apiKeyIv         String?
   apiKeyTag        String?
@@ -85,7 +85,6 @@ model EngineConfig {
 
 enum EngineProvider {
   PI
-  GROK
 }
 
 enum ThinkingLevel {
@@ -104,7 +103,7 @@ model Session {
   userId          String
   user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   title           String?
-  engine          EngineProvider @default(PI)
+  engine          EngineProvider @default(PI) // 保留字段向后兼容，默认 PI
   status          SessionStatus @default(ACTIVE)
   parentSessionId String?
   rootNodeId      String?

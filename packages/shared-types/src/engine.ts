@@ -14,7 +14,6 @@
 
 export enum EngineProvider {
   PI = "PI",
-  GROK = "GROK",
 }
 
 // ─── Agent Event Type ──────────────────────────────────────────────

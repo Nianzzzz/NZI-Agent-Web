@@ -1,7 +1,7 @@
 /**
  * Mock Engine Adapter (T010 — Agent Loop Timeline)
  *
- * 用途：当真实 Pi / Grok 引擎未配置或不可用时，作为兜底适配器。
+ * 用途：当真实 Pi 引擎未配置或不可用时，作为兜底适配器。
  *
  * T010 升级：从单一 MESSAGE 流改为 3 阶段 Loop Timeline：
  *   1. thinking   — Agent 内部推理（灰色块，可折叠）
@@ -11,7 +11,7 @@
  * 每阶段以 AGENT_START / TURN_START / TOOL_EXECUTION_* / MESSAGE_* / AGENT_END 事件呈现。
  * EngineBridge 与 ws-chat.controller 负责把这些事件翻译成 WS `node` 事件。
  *
- * 真实接 Pi/Grok 后，把 initializeAdapters 调用里的 MockEngineAdapter
+ * 真实接 Pi 后，把 initializeAdapters 调用里的 MockEngineAdapter
  * 移除即可平滑切换（真实引擎本就发这些事件）。
  */
 
@@ -19,11 +19,11 @@ import type { IEngineAdapter, NZiAgentEvent, PromptOptions } from "@nzi/shared-t
 import { AgentEventType, EngineProvider } from "@nzi/shared-types";
 
 const TYPE_SPEED_MS = 14; // 每字符延迟，模拟 typewriting（比 T009 略快，便于看到节点切换）
+const PROVIDER_LABEL = "Pi Agent";
 
 // ─── 思考内容生成 ────────────────────────────────────────────────
 
-function buildThinking(prompt: string, provider: "PI" | "GROK"): string {
-  const providerLabel = provider === "PI" ? "Pi Agent" : "Grok Agent";
+function buildThinking(prompt: string): string {
   const trimmed = prompt.trim();
   return `让我分析一下用户的问题。\n\n` +
     `**问题理解**：用户问的是「${trimmed.slice(0, 60)}${trimmed.length > 60 ? "…" : ""}」\n\n` +
@@ -32,7 +32,7 @@ function buildThinking(prompt: string, provider: "PI" | "GROK"): string {
     `2. 关键词提取：${trimmed.split(/\s+/).slice(0, 5).join(" / ")}\n` +
     `3. 我应该给出一个有结构、有例子的回答，而不是泛泛而谈\n` +
     `4. 如果需要查证事实，可以调用搜索工具\n\n` +
-    `**决策**：本次回答由 ${providerLabel} 直接生成，不需要外部工具。`;
+    `**决策**：本次回答由 ${PROVIDER_LABEL} 直接生成，不需要外部工具。`;
 }
 
 // ─── 工具调用 mock（如果 prompt 含 "搜索" / "search"） ──────────
@@ -61,11 +61,10 @@ function shouldUseTool(prompt: string): { toolName: string; input: Record<string
 
 // ─── 最终回答生成 ────────────────────────────────────────────────
 
-function buildMockAnswer(prompt: string, provider: "PI" | "GROK", toolOutput: string | null): string {
+function buildMockAnswer(prompt: string, toolOutput: string | null): string {
   const trimmed = prompt.trim();
-  const providerLabel = provider === "PI" ? "Pi Agent" : "Grok Agent";
   const lines: string[] = [];
-  lines.push(`**🤖 ${providerLabel} · Mock Engine (typewriting demo)**\n`);
+  lines.push(`**🤖 ${PROVIDER_LABEL} · Mock Engine (typewriting demo)**\n`);
   lines.push(`> 收到：\`${trimmed.slice(0, 80)}${trimmed.length > 80 ? "…" : ""}\`\n`);
   lines.push("---");
   lines.push("### 回复大纲");
@@ -83,7 +82,7 @@ function buildMockAnswer(prompt: string, provider: "PI" | "GROK", toolOutput: st
   lines.push("### Mock 引擎说明");
   lines.push("- 这是 **Mock Adapter**，用于本地端到端调试流式响应");
   lines.push("- T010 起：每个回复都包含 **思考 → [工具] → 回答** 三阶段，可在 UI 上看到时间线");
-  lines.push("- 真实接 Pi/Grok 时，从 `engine-bridge.ts` 的 `initializeAdapters` 移除 mock 即可");
+  lines.push("- 真实接 Pi 时，从 `engine-bridge.ts` 的 `initializeAdapters` 移除 mock 即可");
   lines.push("- WebSocket 协议 / 落库 / 中断逻辑与生产路径完全一致");
   lines.push("");
   lines.push("✅ **演示完成** — 这条消息会逐字流入前端，体验与真实引擎一致。");
@@ -143,7 +142,7 @@ export class MockEngineAdapter implements IEngineAdapter {
 
     // ─── 阶段 1: THINKING ─────────────────────────────────────
     const thinkingNodeId = `${nodeIdBase}_thinking`;
-    const thinkingText = buildThinking(options.content, this.name as "PI" | "GROK");
+    const thinkingText = buildThinking(options.content);
 
     // THINKING start
     yield {
@@ -254,7 +253,7 @@ export class MockEngineAdapter implements IEngineAdapter {
 
     // ─── 阶段 3: ANSWER ───────────────────────────────────────
     const answerNodeId = `${nodeIdBase}_answer`;
-    const answerText = buildMockAnswer(options.content, this.name as "PI" | "GROK", toolOutput);
+    const answerText = buildMockAnswer(options.content, toolOutput);
 
     yield {
       id: `evt_${crypto.randomUUID()}`,

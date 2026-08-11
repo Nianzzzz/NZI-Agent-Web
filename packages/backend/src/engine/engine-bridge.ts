@@ -12,10 +12,8 @@
 
 import type { IEngineAdapter, PromptOptions, NZiAgentEvent } from "@nzi/shared-types";
 import { EngineProvider } from "@nzi/shared-types";
-import { PiAdapter } from "./adapters/pi-adapter.js";
-import { GrokAdapter } from "./adapters/grok-adapter.js";
-import { MockEngineAdapter } from "./adapters/mock-adapter.js";
 import { BailianAdapter } from "./adapters/bailian-adapter.js";
+import { MockEngineAdapter } from "./adapters/mock-adapter.js";
 
 // ─── 注册表 ───────────────────────────────────────────────────────
 
@@ -51,60 +49,30 @@ export function getAllAdapters(): IEngineAdapter[] {
 }
 
 /**
- * 初始化默认 Adapters（Phase 1: Pi + Grok + Mock 兜底）
+ * 初始化默认 Adapters
  *
  * 行为：
- * - 尝试注册 Pi / Grok 真实适配器（失败不抛，仅 warn）
- * - 默认额外注册 MockEngineAdapter 作为兜底（可通过环境变量 USE_MOCK_ENGINE=false 关闭）
- * - 已注册 provider 不会重复注册（同名 mock 跳过）
+ * - 如果配置了 BAILIAN_API_KEY，用 BailianAdapter 作为 PI provider
+ * - 否则注册 MockEngineAdapter 作为兜底
  */
 export async function initializeAdapters(
   extraAdapters: IEngineAdapter[] = [],
 ): Promise<void> {
-  const useMock = process.env.USE_MOCK_ENGINE !== "false";
-
-  // ─── 真实适配器 ──────────────────────────────────────────────
-  //
-  // 优先级：BailianAdapter > PiAdapter > GrokAdapter
-  // - 如果配置了 BAILIAN_API_KEY，用 BailianAdapter 作为 PI provider
-  //   （百炼 OpenAI 兼容接口，支持 qwen 系列模型，无需安装 Pi SDK）
-  // - 否则用 PiAgent SDK（需要 packages/pi-agent 已构建）
-  const realAdapters: IEngineAdapter[] = [];
-
-  if (process.env.BAILIAN_API_KEY) {
-    realAdapters.push(new BailianAdapter());
-  } else {
-    realAdapters.push(new PiAdapter());
-  }
-  realAdapters.push(new GrokAdapter());
-
-  for (const adapter of realAdapters) {
+  try {
+    await registerAdapter(new BailianAdapter());
+    console.log(`[engine] ✓ BailianAdapter registered`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[engine] BailianAdapter unavailable: ${msg}`);
+    console.warn(`[engine] Falling back to MockAdapter`);
     try {
-      await registerAdapter(adapter);
-      console.log(`[engine] ✓ ${adapter.name} adapter registered`);
-    } catch (err) {
-      console.warn(
-        `[engine] Failed to initialize ${adapter.name}:`,
-        err instanceof Error ? err.message : err,
-      );
+      await registerAdapter(new MockEngineAdapter(EngineProvider.PI));
+      console.log(`[engine] ✓ MockAdapter registered (fallback)`);
+    } catch {
+      // mock 永远可用，不应该到达这里
     }
   }
 
-  if (useMock) {
-    // 仅为尚未注册的 provider 注册 mock 兜底
-    for (const provider of [EngineProvider.PI, EngineProvider.GROK] as const) {
-      if (!registry.has(provider)) {
-        try {
-          await registerAdapter(new MockEngineAdapter(provider));
-          console.log(`[engine] Mock adapter registered for ${provider} (fallback)`);
-        } catch (err) {
-          console.warn(`[engine] Failed to register mock for ${provider}:`, err);
-        }
-      }
-    }
-  }
-
-  // 最后再注册外部显式传入的 adapter（用于测试覆盖）
   for (const adapter of extraAdapters) {
     try {
       await registerAdapter(adapter);
@@ -123,9 +91,9 @@ export async function initializeAdapters(
  *   const events = await routePrompt("PI", { sessionId, content, ... });
  *   for await (const event of events) { ... }
  *
- * 未来扩展 Grok 时，只需注册 GrokAdapter：
- *   await registerAdapter(new GrokAdapter());
- *   // routePrompt("GROK", ...) 自动路由
+ * 未来新增引擎时，只需实现 IEngineAdapter 并注册：
+ *   await registerAdapter(new MyAdapter());
+ *   // routePrompt(MyAdapter.name, ...) 自动路由
  */
 export async function* routePrompt(
   provider: string,
