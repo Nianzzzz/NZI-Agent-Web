@@ -55,7 +55,7 @@ export function getAllAdapters(): IEngineAdapter[] {
  * 行为：
  * - 如果配置了 BAILIAN_API_KEY，注册 BailianAdapter（PI）和 GrokAdapter（GROK）
  *   两者共用百炼 API Key 和端点，但使用不同模型（PI=BAILIAN_MODEL，GROK=GROK_MODEL）
- * - 否则注册 MockEngineAdapter 作为 PI 的兜底（GROK 不可用）
+ * - 否则注册 MockEngineAdapter 作为 PI 和 GROK 的兜底（UI 切换引擎时不会报错）
  */
 export async function initializeAdapters(
   extraAdapters: IEngineAdapter[] = [],
@@ -79,10 +79,16 @@ export async function initializeAdapters(
       console.warn(`[engine] GrokAdapter unavailable: ${msg}`);
     }
   } else {
-    console.warn(`[engine] BAILIAN_API_KEY not set — registering MockAdapter as PI fallback`);
+    console.warn(`[engine] BAILIAN_API_KEY not set — registering MockAdapter as PI+GROK fallback`);
     try {
       await registerAdapter(new MockEngineAdapter(EngineProvider.PI));
-      console.log(`[engine] ✓ MockAdapter registered (fallback)`);
+      console.log(`[engine] ✓ MockAdapter registered (PI fallback)`);
+    } catch {
+      // mock 永远可用，不应该到达这里
+    }
+    try {
+      await registerAdapter(new MockEngineAdapter(EngineProvider.GROK));
+      console.log(`[engine] ✓ MockAdapter registered (GROK fallback)`);
     } catch {
       // mock 永远可用，不应该到达这里
     }
