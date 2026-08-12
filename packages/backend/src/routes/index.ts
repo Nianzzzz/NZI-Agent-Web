@@ -71,4 +71,33 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
   );
 };
 
-export { authRoutes, sessionRoutes };
+// ─── 诊断路由（无需 JWT） ─────────────────────────────────────────
+
+const engineRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.get("/api/engine/health", async (_req, reply) => {
+    const { checkAllEngines } = await import("../engine/engine-bridge.js");
+    const results = await checkAllEngines();
+    const rows: Record<string, unknown>[] = [];
+    for (const [name, health] of results) {
+      rows.push({
+        name,
+        healthy: health.healthy,
+        latencyMs: health.latencyMs,
+        detail: health.detail,
+      });
+    }
+    return {
+      loaded: rows.length > 0,
+      engines: rows,
+      env: {
+        BAILIAN_API_KEY: process.env.BAILIAN_API_KEY
+          ? process.env.BAILIAN_API_KEY.slice(0, 8) + "…" + process.env.BAILIAN_API_KEY.slice(-4)
+          : "(unset)",
+        BAILIAN_MODEL: process.env.BAILIAN_MODEL ?? "(unset)",
+        GROK_MODEL: process.env.GROK_MODEL ?? "(unset)",
+      },
+    };
+  });
+};
+
+export { authRoutes, sessionRoutes, engineRoutes };

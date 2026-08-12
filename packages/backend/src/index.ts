@@ -16,7 +16,7 @@ import redis from "@fastify/redis";
 import Redis from "ioredis";
 import { PrismaClient } from "@prisma/client";
 import { JWT_SECRET } from "./config/auth.config.js";
-import { authRoutes, sessionRoutes } from "./routes/index.js";
+import { authRoutes, sessionRoutes, engineRoutes } from "./routes/index.js";
 import { wsChatRoutes } from "./routes/ws.route.js";
 import { initializeAdapters } from "./engine/engine-bridge.js";
 
@@ -163,6 +163,7 @@ fastify.get("/ready", async () => ({
 fastify.register(async (instance) => {
   await instance.register(authRoutes);
   await instance.register(sessionRoutes);
+  await instance.register(engineRoutes);
 });
 
 // ─── WebSocket Routes ────────────────────────────────────────────
