@@ -15,6 +15,7 @@ export interface CreateSessionInput {
 }
 
 export interface CreateMessageInput {
+  id?: string;
   sessionId: string;
   role: "USER" | "ASSISTANT" | "TOOL_RESULT";
   content: string;
@@ -147,6 +148,7 @@ export class SessionService {
   async createMessage(input: CreateMessageInput) {
     return this.prisma.message.create({
       data: {
+        id: input.id, // 允许调用方指定 ID（如前端 requestId），否则 Prisma 自动生成
         sessionId: input.sessionId,
         role: input.role,
         content: input.content,

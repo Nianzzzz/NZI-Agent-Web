@@ -411,6 +411,7 @@ export class WsChatController {
             const fullText = texts.join("");
             const finalNodes = Array.from(nodes.values());
             await this.sessionService.createMessage({
+              id: requestId,
               sessionId,
               role: "ASSISTANT",
               content: fullText,
@@ -436,6 +437,7 @@ export class WsChatController {
         const fullText = texts.join("");
         const finalNodes = Array.from(nodes.values());
         await this.sessionService.createMessage({
+          id: requestId,
           sessionId,
           role: "ASSISTANT",
           content: fullText,

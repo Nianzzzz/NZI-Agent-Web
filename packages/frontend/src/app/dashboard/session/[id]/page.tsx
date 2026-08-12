@@ -242,7 +242,7 @@ function SessionNavigator({ turns, currentTurn }: {
 
   return (
     <div
-      className="fixed left-3 top-1/2 z-20 flex flex-col -translate-y-1/2 rounded-full border border-slate-200 bg-white/95 py-1.5 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95"
+      className="fixed right-3 top-1/2 z-20 flex flex-col -translate-y-1/2 rounded-full border border-slate-200 bg-white/95 py-1.5 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95"
       onMouseLeave={() => setHovered(null)}
     >
       {turns.map((turn) => {
