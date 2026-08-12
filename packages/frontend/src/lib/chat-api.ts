@@ -46,6 +46,15 @@ export async function fetchSessionDetail(id: string): Promise<SessionDetail | nu
   return res.json();
 }
 
+export async function deleteMessage(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/messages/${id}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+  });
+  if (res.status === 404) throw new Error("消息不存在或无权限");
+  if (!res.ok) throw new Error(`Failed to delete message: ${res.status}`);
+}
+
 export async function fetchSessionMessages(
   id: string,
   limit = 200,

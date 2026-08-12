@@ -61,6 +61,8 @@ interface ChatActions {
   appendMessage: (sessionId: string, message: ChatMessage) => void;
   /** 用 DB 历史消息整体替换该 session 的消息列表（避免临时 ID 与 DB ID 重复） */
   replaceMessages: (sessionId: string, messages: ChatMessage[]) => void;
+  /** 从消息列表中移除一条消息（删除中断后的空消息等） */
+  removeMessage: (sessionId: string, messageId: string) => void;
   updateStreamingContent: (sessionId: string, delta: string) => void;
   /** 设置 streaming 消息（占位，供 addNode/appendNodeDelta 使用） */
   setStreaming: (sessionId: string, message: ChatMessage) => void;
@@ -143,6 +145,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         [sessionId]: messages,
       },
     })),
+
+  removeMessage: (sessionId, messageId) =>
+    set((state) => {
+      const existing = state.messagesBySession[sessionId] ?? [];
+      return {
+        messagesBySession: {
+          ...state.messagesBySession,
+          [sessionId]: existing.filter((m) => m.id !== messageId),
+        },
+      };
+    }),
 
   updateStreamingContent: (sessionId, delta) =>
     set((state) => {

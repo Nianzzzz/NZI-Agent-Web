@@ -74,6 +74,22 @@ export class SessionController {
   }
 
   /**
+   * DELETE /api/messages/:id
+   * 删除单条消息（移除中断后的空消息等）
+   */
+  async deleteMessage(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+    const user = req.user as TokenPayload | undefined;
+    if (!user) {
+      return reply.status(401).send({ error: "未登录或登录已过期" });
+    }
+    const result = await this.sessionService.deleteMessage(req.params.id, user.tenantId);
+    if (!result) {
+      return reply.status(404).send({ error: "消息不存在或无权限" });
+    }
+    return reply.send({ ok: true });
+  }
+
+  /**
    * DELETE /api/sessions/:id
    * 归档会话（软删除）
    */

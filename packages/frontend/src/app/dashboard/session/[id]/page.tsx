@@ -17,14 +17,14 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Bot, Cpu, Send, Square, Loader2,
   Sparkles, AlertCircle, CheckCircle2, MessageSquare, User as UserIcon, Brain,
-  ChevronDown, ChevronRight, Copy, Check,
+  ChevronDown, ChevronRight, Copy, Check, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuthStore } from "@/lib/auth-store";
 import { useChatSocket } from "@/hooks/use-chat-socket";
 import { useChatStore, type ChatMessage } from "@/stores/chat.store";
-import { fetchSessionDetail, fetchSessionMessages, type SessionDetail } from "@/lib/chat-api";
+import { fetchSessionDetail, fetchSessionMessages, deleteMessage, type SessionDetail } from "@/lib/chat-api";
 import AgentTimeline from "@/components/chat/AgentTimeline";
 import Markdown from "@/components/chat/Markdown";
 import { cn } from "@/lib/utils";
@@ -72,9 +72,10 @@ function ReasoningBox({ nodes }: {
 
 // ─── 消息气泡 ─────────────────────────────────────────────────────
 
-function MessageBubble({ message, engineGradient }: {
+function MessageBubble({ message, engineGradient, onRemove }: {
   message: ChatMessage;
   engineGradient: string;
+  onRemove?: (messageId: string) => void;
 }) {
   const isUser = message.role === "user";
   const isStreaming = message.status === "streaming";
@@ -157,6 +158,19 @@ function MessageBubble({ message, engineGradient }: {
           >
             {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
             {copied ? "已复制" : "复制"}
+          </button>
+        )}
+
+        {/* ── 移除按钮（中断的空消息 / 无内容的 assistant 消息） ── */}
+        {!isUser && onRemove && (message.status === "interrupted" || message.status === "error") && !message.content && (
+          <button
+            type="button"
+            onClick={() => onRemove(message.id)}
+            className="absolute -right-2 top-2 z-10 flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700 opacity-0 shadow-sm transition-all group-hover:opacity-100 hover:border-amber-300 hover:text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+            title="移除此消息"
+          >
+            <Trash2 className="h-3 w-3" />
+            移除
           </button>
         )}
 
@@ -290,6 +304,20 @@ export default function SessionChatPage() {
   const prevGeneratingRef = useRef(false);
 
   const replaceMessages = useChatStore((s) => s.replaceMessages);
+  const removeMessage = useChatStore((s) => s.removeMessage);
+
+  // 移除消息：先乐观更新 store，再调用后端 API
+  const handleRemoveMessage = useCallback(
+    async (messageId: string) => {
+      removeMessage(sessionId, messageId);
+      try {
+        await deleteMessage(messageId);
+      } catch {
+        // 删除失败时不影响已有 UI（消息已从列表中移除）
+      }
+    },
+    [sessionId, removeMessage],
+  );
 
   // 滚动到最后一个用户问题（让用户一进来先看到自己提的问题，再往下看答案）
   const scrollToLastUserMessage = useCallback((userMsgIds: string[]) => {
@@ -614,7 +642,7 @@ export default function SessionChatPage() {
           ) : (
             renderedMessages.map((m) => (
               <div key={m.id} id={`msg-${m.id}`}>
-                <MessageBubble message={m} engineGradient={meta.gradient} />
+                <MessageBubble message={m} engineGradient={meta.gradient} onRemove={handleRemoveMessage} />
               </div>
             ))
           )}

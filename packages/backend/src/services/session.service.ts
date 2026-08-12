@@ -91,6 +91,21 @@ export class SessionService {
   }
 
   /**
+   * 删除单条消息（用户或 assistant 均可）
+   * 用于移除中断后留下的空消息或用户误发的消息。
+   */
+  async deleteMessage(messageId: string, tenantId: string) {
+    // 先确认消息属于该租户（通过 session 关联）
+    const [msg] = await this.prisma.message.findMany({
+      where: { id: messageId },
+      select: { sessionId: true, session: { select: { tenantId: true } } },
+      take: 1,
+    });
+    if (!msg || msg.session.tenantId !== tenantId) return null;
+    return this.prisma.message.delete({ where: { id: messageId } });
+  }
+
+  /**
    * 永久删除会话（硬删除 + 关联消息级联删除）
    */
   async archiveSession(sessionId: string, tenantId: string) {
