@@ -106,6 +106,25 @@ export class SessionService {
   }
 
   /**
+   * 重命名会话（租户隔离）
+   */
+  async renameSession(sessionId: string, tenantId: string, title: string) {
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId, tenantId },
+    });
+    if (!session) return null;
+    return this.prisma.session.update({
+      where: { id: sessionId },
+      data: { title },
+      include: {
+        user: {
+          select: { id: true, email: true, displayName: true },
+        },
+      },
+    });
+  }
+
+  /**
    * 永久删除会话（硬删除 + 关联消息级联删除）
    */
   async archiveSession(sessionId: string, tenantId: string) {

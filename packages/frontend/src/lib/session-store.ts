@@ -26,6 +26,7 @@ interface SessionActions {
   setError: (error: string | null) => void;
   fetchSessions: () => Promise<void>;
   createSession: (params: { title?: string; engine?: "PI" | "GROK" }) => Promise<Session>;
+  renameSession: (id: string, title: string) => Promise<void>;
 }
 
 export const useSessionStore = create<SessionState & SessionActions>((set, get) => ({
@@ -116,6 +117,30 @@ export const useSessionStore = create<SessionState & SessionActions>((set, get) 
       const message = error instanceof Error ? error.message : "Unknown error";
       set({ error: message, isLoading: false });
       throw error;
+    }
+  },
+
+  renameSession: async (id, title) => {
+    const token = useAuthStore.getState().token;
+    if (!token) throw new Error("未登录");
+    try {
+      const res = await fetch(`/api/sessions/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ title }),
+      });
+      if (!res.ok) throw new Error(`重命名失败: ${res.status}`);
+      const updated = (await res.json()) as Session;
+      set((state) => ({
+        sessions: state.sessions.map((s) => (s.id === id ? { ...s, title: updated.title } : s)),
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "重命名失败";
+      set((state) => ({ error: message }));
+      throw err;
     }
   },
 }));

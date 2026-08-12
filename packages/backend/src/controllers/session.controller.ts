@@ -90,6 +90,26 @@ export class SessionController {
   }
 
   /**
+   * PATCH /api/sessions/:id
+   * 重命名会话
+   */
+  async rename(req: FastifyRequest<{ Params: { id: string }; Body: { title?: string } }>, reply: FastifyReply) {
+    const user = req.user as TokenPayload | undefined;
+    if (!user) {
+      return reply.status(401).send({ error: "未登录或登录已过期" });
+    }
+    const { title } = req.body;
+    if (!title || !title.trim()) {
+      return reply.status(400).send({ error: "标题不能为空" });
+    }
+    const session = await this.sessionService.renameSession(req.params.id, user.tenantId, title.trim());
+    if (!session) {
+      return reply.status(404).send({ error: "会话不存在" });
+    }
+    return reply.send(session);
+  }
+
+  /**
    * DELETE /api/sessions/:id
    * 归档会话（软删除）
    */
