@@ -206,6 +206,40 @@ enum AgentEventType {
   ERROR
 }
 
+// ─── Arena Match ──────────────────────────────────────────────────
+
+model ArenaMatch {
+  id            String          @id @default(cuid())
+  tenantId      String
+  userId        String
+  prompt        String
+  thinkingLevel ThinkingLevel?
+  status        ArenaMatchStatus @default(RUNNING)
+  createdAt     DateTime        @default(now())
+  completedAt   DateTime?
+
+  votes         ArenaVote[]
+
+  @@index([tenantId, createdAt])
+  @@map("arena_matches")
+}
+
+enum ArenaMatchStatus {
+  RUNNING
+  COMPLETED
+}
+
+model ArenaVote {
+  id        String       @id @default(cuid())
+  matchId   String
+  match     ArenaMatch   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  provider  EngineProvider
+  createdAt DateTime     @default(now())
+
+  @@index([matchId])
+  @@map("arena_votes")
+}
+
 // ─── Session Node (Phase 2 placeholder) ────────────────────────────
 
 model SessionNode {

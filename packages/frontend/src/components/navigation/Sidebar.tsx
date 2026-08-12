@@ -11,11 +11,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import {
+import { usePathname } from "next/navigation";import {
   Bot, Plus, LogOut, MoreHorizontal, Pencil, Trash2,
   Check, X, MessageSquare, ChevronLeft, ChevronRight,
-  Cpu, Sparkles,
+  Cpu, Sparkles, Trophy,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import { useSessionStore, type Session } from "@/lib/session-store";
@@ -398,8 +397,17 @@ function SidebarInner({
         )}
       </div>
 
-      {/* ── 底部：用户信息 + 退出 ── */}
+      {/* ── 底部：Arena 入口 + 用户信息 + 退出 ── */}
       <div className={cn("border-t border-slate-200/60 px-2 py-2 dark:border-slate-800/60", collapsed && "px-1")}>
+        {!collapsed && (
+          <Link
+            href="/dashboard/arena"
+            className="mb-2 flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-500 transition-colors hover:bg-amber-50 hover:text-amber-700 dark:hover:bg-amber-950/20"
+          >
+            <Trophy className="h-4 w-4 shrink-0" />
+            <span className="font-medium">Arena 对战</span>
+          </Link>
+        )}
         {!collapsed && user && (
           <div className="mb-2 flex items-center gap-2 px-2">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-[10px] font-semibold text-white">

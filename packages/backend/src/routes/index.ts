@@ -9,8 +9,10 @@
 import type { FastifyPluginAsync } from "fastify";
 import { AuthController } from "../controllers/auth.controller.js";
 import { SessionController } from "../controllers/session.controller.js";
+import { ArenaController } from "../controllers/arena.controller.js";
 import { AuthService } from "../services/auth.service.js";
 import { SessionService } from "../services/session.service.js";
+import { ArenaService } from "../services/arena.service.js";
 
 // ─── 公有路由（无需 JWT） ─────────────────────────────────────────
 
@@ -79,6 +81,27 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
   );
 };
 
+// ─── Arena 路由（需 JWT） ──────────────────────────────────────────
+
+const arenaRoutes: FastifyPluginAsync = async (fastify) => {
+  const sessionService = new SessionService(fastify.prisma);
+  const arenaService = new ArenaService(sessionService);
+  const controller = new ArenaController(arenaService);
+
+  fastify.post(
+    "/api/arena",
+    async (req, reply) => controller.create(req as never, reply as never),
+  );
+  fastify.get(
+    "/api/arena",
+    async (req, reply) => controller.list(req as never, reply as never),
+  );
+  fastify.post<{ Params: { id: string }; Body: { winner: "A" | "B" | "tie" } }>(
+    "/api/arena/:id/vote",
+    async (req, reply) => controller.vote(req as never, reply as never),
+  );
+};
+
 // ─── 诊断路由（无需 JWT） ─────────────────────────────────────────
 
 const engineRoutes: FastifyPluginAsync = async (fastify) => {
@@ -108,4 +131,4 @@ const engineRoutes: FastifyPluginAsync = async (fastify) => {
   });
 };
 
-export { authRoutes, sessionRoutes, engineRoutes };
+export { authRoutes, sessionRoutes, engineRoutes, arenaRoutes };
