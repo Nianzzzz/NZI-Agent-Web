@@ -126,6 +126,89 @@ export class SessionService {
   }
 
   /**
+   * Fork 会话：从指定消息处创建分支会话
+   * 新会话继承 fork 点之前的所有消息，parentSessionId 指向原会话
+   */
+  async forkSession(sessionId: string, tenantId: string, forkFromMessageId?: string): Promise<{ id: string; title: string } | null> {
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId, tenantId },
+      include: { messages: { orderBy: { createdAt: "asc" } } },
+    });
+    if (!session) return null;
+
+    const newSession = await this.prisma.session.create({
+      data: {
+        tenantId,
+        userId: session.userId,
+        title: `${session.title ?? "会话"} — 分支`,
+        engine: session.engine,
+        status: "ACTIVE",
+        parentSessionId: sessionId,
+      },
+    });
+
+    // 复制 fork 点之前的消息到新会话
+    const messagesToCopy = forkFromMessageId
+      ? session.messages.filter((m) => {
+          const idx = session.messages.findIndex((x) => x.id === forkFromMessageId);
+          return idx >= 0 ? session.messages.indexOf(m) <= idx : true;
+        })
+      : session.messages;
+
+    if (messagesToCopy.length > 0) {
+      await this.prisma.message.createMany({
+        data: messagesToCopy.map((m) => ({
+          sessionId: newSession.id,
+          role: m.role,
+          content: m.content,
+          reasoning: m.reasoning ?? (null as never),
+          toolCalls: m.toolCalls as never,
+          tokenUsage: m.tokenUsage as never,
+          latencyMs: m.latencyMs ?? (null as never),
+          status: m.status,
+          timelineNodes: m.timelineNodes as never,
+        })),
+      });
+    }
+
+    return { id: newSession.id, title: newSession.title ?? "新分支" };
+  }
+
+  /**
+   * 获取会话树（递归展开所有子会话）
+   * 手动递归查询以兼容未重新生成 Prisma client 的环境
+   */
+  async getSessionTree(sessionId: string, tenantId: string): Promise<unknown> {
+    const buildTree = async (id: string): Promise<unknown> => {
+      const session = await this.prisma.session.findFirst({
+        where: { id, tenantId },
+        select: {
+          id: true,
+          title: true,
+          engine: true,
+          createdAt: true,
+        },
+      });
+      if (!session) return null;
+
+      const children = await this.prisma.session.findMany({
+        where: { parentSessionId: id, tenantId },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, title: true, engine: true, createdAt: true },
+      });
+
+      const childTrees = await Promise.all(children.map(async (c) => {
+        const subtree = await buildTree(c.id);
+        return { ...c, children: subtree ? [subtree] : [] };
+      }));
+
+      return { ...session, children: childTrees };
+    };
+
+    return buildTree(sessionId);
+  }
+
+  /**
    * 永久删除会话（硬删除 + 关联消息级联删除）
    */
   async archiveSession(sessionId: string, tenantId: string) {

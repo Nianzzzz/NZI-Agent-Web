@@ -63,6 +63,14 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/sessions/:id",
     async (req, reply) => controller.get(req as never, reply as never),
   );
+  fastify.post<{ Params: { id: string }; Body: { forkFromMessageId?: string } }>(
+    "/api/sessions/:id/fork",
+    async (req, reply) => controller.fork(req as never, reply as never),
+  );
+  fastify.get<{ Params: { id: string } }>(
+    "/api/sessions/:id/tree",
+    async (req, reply) => controller.getTree(req as never, reply as never),
+  );
   fastify.patch<{ Params: { id: string }; Body: { title?: string } }>(
     "/api/sessions/:id",
     async (req, reply) => controller.rename(req as never, reply as never),

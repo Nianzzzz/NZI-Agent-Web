@@ -107,6 +107,7 @@ model Session {
   engine          EngineProvider @default(PI) // 保留字段向后兼容，默认 PI
   status          SessionStatus @default(ACTIVE)
   parentSessionId String?
+  parentSession   Session?    @relation("SessionTree", fields: [parentSessionId], references: [id])
   rootNodeId      String?
   summary         String?
   metadata        Json?
@@ -115,6 +116,7 @@ model Session {
 
   messages    Message[]
   events      AgentEvent[]
+  children    Session[] @relation("SessionTree")
 
   @@index([tenantId, createdAt])
   @@index([userId, createdAt])
