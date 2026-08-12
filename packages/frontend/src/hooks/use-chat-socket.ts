@@ -187,13 +187,10 @@ export function useChatSocket({
 
     const url = new URL(WS_URL);
     url.pathname = "/api/ws/chat";
-    if (token) {
-      // 通过 Sec-WebSocket-Protocol 子协议头传递 JWT，
-      // 避免 token 出现在 URL query 中被代理/浏览器历史泄露。
-      url.searchParams.set("token", "__via_protocol_header__");
-    }
     url.searchParams.set("sessionId", sessionId);
 
+    // JWT 通过 Sec-WebSocket-Protocol 子协议头传递，
+    // 避免 token 出现在 URL query 中被代理/浏览器历史泄露。
     const wsUrl = url.toString();
     const ws = new WebSocket(wsUrl, token ? [token] : []);
     wsRef.current = ws;
