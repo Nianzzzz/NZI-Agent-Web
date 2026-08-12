@@ -126,6 +126,17 @@ export class SessionService {
   }
 
   /**
+   * 根据用户提问自动生成会话标题（取前 N 个字符截断）
+   */
+  async autoTitle(sessionId: string, tenantId: string, prompt: string): Promise<void> {
+    const title = prompt.trim().slice(0, 30) + (prompt.trim().length > 30 ? "…" : "");
+    await this.prisma.session.updateMany({
+      where: { id: sessionId, tenantId, title: "新会话" },
+      data: { title },
+    });
+  }
+
+  /**
    * Fork 会话：从指定消息处创建分支会话
    * 新会话继承 fork 点之前的所有消息，parentSessionId 指向原会话
    */

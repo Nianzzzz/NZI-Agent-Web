@@ -253,6 +253,8 @@ export class WsChatController {
         content: prompt,
         latencyMs: 0,
       });
+      // 自动标题：如果会话还是默认标题，用首轮提问生成
+      await this.sessionService.autoTitle(sessionId, user.tenantId, prompt);
     } catch {
       // 落库失败不阻断流
     }
