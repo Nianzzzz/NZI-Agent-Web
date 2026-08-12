@@ -10,9 +10,11 @@ import type { FastifyPluginAsync } from "fastify";
 import { AuthController } from "../controllers/auth.controller.js";
 import { SessionController } from "../controllers/session.controller.js";
 import { ArenaController } from "../controllers/arena.controller.js";
+import { EngineConfigController } from "../controllers/engine-config.controller.js";
 import { AuthService } from "../services/auth.service.js";
 import { SessionService } from "../services/session.service.js";
 import { ArenaService } from "../services/arena.service.js";
+import { EngineConfigService } from "../services/engine-config.service.js";
 
 // ─── 公有路由（无需 JWT） ─────────────────────────────────────────
 
@@ -110,6 +112,26 @@ const arenaRoutes: FastifyPluginAsync = async (fastify) => {
   );
 };
 
+// ─── 引擎配置路由（需 JWT） ──────────────────────────────────────
+
+const engineConfigRoutes: FastifyPluginAsync = async (fastify) => {
+  const engineConfigService = new EngineConfigService(fastify.prisma);
+  const controller = new EngineConfigController(engineConfigService);
+
+  fastify.get(
+    "/api/engine-config",
+    async (req, reply) => controller.list(req as never, reply as never),
+  );
+  fastify.put<{ Params: { provider: "PI" | "GROK" } }>(
+    "/api/engine-config/:provider",
+    async (req, reply) => controller.upsert(req as never, reply as never),
+  );
+  fastify.delete<{ Params: { provider: "PI" | "GROK" } }>(
+    "/api/engine-config/:provider",
+    async (req, reply) => controller.remove(req as never, reply as never),
+  );
+};
+
 // ─── 诊断路由（无需 JWT） ─────────────────────────────────────────
 
 const engineRoutes: FastifyPluginAsync = async (fastify) => {
@@ -139,4 +161,4 @@ const engineRoutes: FastifyPluginAsync = async (fastify) => {
   });
 };
 
-export { authRoutes, sessionRoutes, engineRoutes, arenaRoutes };
+export { authRoutes, sessionRoutes, engineRoutes, arenaRoutes, engineConfigRoutes };
