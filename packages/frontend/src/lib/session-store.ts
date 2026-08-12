@@ -79,6 +79,12 @@ export const useSessionStore = create<SessionState & SessionActions>((set, get) 
       const response = await fetch("/api/sessions", {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (response.status === 401) {
+        // Token 已过期或无效 → 清除本地认证状态，触发重新登录
+        useAuthStore.getState().logout();
+        set({ error: "登录已过期，请重新登录", isLoading: false, sessions: [] });
+        return;
+      }
       if (!response.ok) {
         throw new Error(`Failed to fetch sessions: ${response.status}`);
       }
