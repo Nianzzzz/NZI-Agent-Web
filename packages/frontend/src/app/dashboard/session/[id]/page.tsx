@@ -205,36 +205,61 @@ function SessionNavigator({ turns, currentTurn }: {
   currentTurn: number | null;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
+  // 展开状态：hover 任意一个条目时展开全部，方便点击
+  const expanded = hovered !== null;
 
-  if (turns.length <= 3) return null;
+  if (turns.length < 2) return null;
 
   return (
-    <div className="fixed left-4 top-1/2 z-20 flex flex-col gap-1.5 -translate-y-1/2 rounded-full border border-slate-200 bg-white/90 p-1.5 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/90">
-      {turns.map((turn) => (
-        <button
-          key={turn.domId}
-          type="button"
-          onClick={() => {
-            document.getElementById(turn.domId)?.scrollIntoView({ behavior: "smooth", block: "center" });
-          }}
-          onMouseEnter={() => setHovered(turn.index)}
-          onMouseLeave={() => setHovered(null)}
-          className={cn(
-            "relative flex h-2.5 w-2.5 items-center justify-center rounded-full transition-all",
-            currentTurn === turn.index
-              ? "bg-blue-500 scale-125"
-              : "bg-slate-300 hover:bg-slate-400 dark:bg-slate-600 dark:hover:bg-slate-500",
-          )}
-        >
-          {/* 悬浮预览气泡（左对齐，箭头指向左侧圆点） */}
-          {hovered === turn.index && (
-            <div className="absolute left-8 top-1/2 z-30 w-56 -translate-y-1/2 rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow-xl dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-              <div className="line-clamp-3 whitespace-pre-wrap">{turn.preview}</div>
-              <div className="absolute -left-1 top-1/2 h-2 w-2 -translate-y-1/2 rotate-45 border-l border-b border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800" />
-            </div>
-          )}
-        </button>
-      ))}
+    <div
+      className="fixed left-3 top-1/2 z-20 flex flex-col -translate-y-1/2 rounded-full border border-slate-200 bg-white/95 py-1.5 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95"
+      onMouseLeave={() => setHovered(null)}
+    >
+      {turns.map((turn) => {
+        const active = currentTurn === turn.index;
+        return (
+          <button
+            key={turn.domId}
+            type="button"
+            onClick={() => {
+              document.getElementById(turn.domId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }}
+            onMouseEnter={() => setHovered(turn.index)}
+            className={cn(
+              "relative flex items-center gap-2 rounded-full px-2 py-1 transition-all",
+              active
+                ? "bg-blue-500 text-white"
+                : expanded
+                  ? "w-full text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  : "w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-600",
+            )}
+            title={turn.preview}
+          >
+            {/* 紧凑模式下的小圆点 */}
+            {!expanded && (
+              <span className={cn(
+                "inline-block h-2 w-2 rounded-full",
+                active ? "bg-white" : "bg-slate-400 dark:bg-slate-500",
+              )} />
+            )}
+            {/* 展开时的横条文本 */}
+            {expanded && (
+              <span className="flex items-center gap-2 text-[10px] leading-tight">
+                <span className={cn(
+                  "inline-flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold",
+                  active ? "bg-white/20 text-white" : "bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400",
+                )}>
+                  {turn.index + 1}
+                </span>
+                <span className="max-w-[160px] truncate text-left">
+                  {turn.preview}
+                </span>
+                {active && <span className="ml-auto shrink-0 text-[8px] opacity-70">当前</span>}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -260,6 +285,9 @@ export default function SessionChatPage() {
 
   // 智能滚动：用户是否主动上滑离开了底部
   const [userScrolledUp, setUserScrolledUp] = useState(false);
+  // 生成期间用户上滑过 → 显示"回到最新"按钮；生成结束后自动清除
+  const [showBackToLatest, setShowBackToLatest] = useState(false);
+  const prevGeneratingRef = useRef(false);
 
   const replaceMessages = useChatStore((s) => s.replaceMessages);
 
@@ -361,13 +389,26 @@ export default function SessionChatPage() {
     if (!el) return;
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     setUserScrolledUp(!isAtBottom);
-  }, []);
+    // 生成期间用户上滑 → 显示"回到最新"按钮
+    if (isGenerating && !isAtBottom) {
+      setShowBackToLatest(true);
+    }
+  }, [isGenerating]);
 
-  // 生成中且用户在底部时，每帧自动跟随新内容向下滚动
+  // 生成期间且用户在底部时，每帧自动跟随新内容向下滚动
   const autoScrollEnabledRef = useRef(false);
   useEffect(() => {
     autoScrollEnabledRef.current = isGenerating && !userScrolledUp;
   }, [isGenerating, userScrolledUp]);
+
+  // 生成结束 → 清除"回到最新"提示
+  useEffect(() => {
+    if (prevGeneratingRef.current && !isGenerating) {
+      setShowBackToLatest(false);
+      setUserScrolledUp(false);
+    }
+    prevGeneratingRef.current = isGenerating;
+  }, [isGenerating]);
 
   useEffect(() => {
     if (!autoScrollEnabledRef.current) return;
@@ -556,8 +597,8 @@ export default function SessionChatPage() {
           <div ref={messagesEndRef} className="h-2" />
         </div>
 
-        {/* ── 回到最下方按钮（用户上滑时显示） ── */}
-        {userScrolledUp && (
+        {/* ── 回到最下方按钮（生成期间用户上滑时显示，生成结束后自动消失） ── */}
+        {showBackToLatest && (
           <div className="fixed bottom-28 left-1/2 z-20 -translate-x-1/2">
             <button
               type="button"
