@@ -72,10 +72,11 @@ function ReasoningBox({ nodes }: {
 
 // ─── 消息气泡 ─────────────────────────────────────────────────────
 
-function MessageBubble({ message, engineGradient, onRemove }: {
+function MessageBubble({ message, engineGradient, onRemove, buffering }: {
   message: ChatMessage;
   engineGradient: string;
   onRemove?: (messageId: string) => void;
+  buffering?: boolean;
 }) {
   const isUser = message.role === "user";
   const isStreaming = message.status === "streaming";
@@ -100,6 +101,18 @@ function MessageBubble({ message, engineGradient, onRemove }: {
           )}
         >
           <Bot className="h-4 w-4" />
+        </div>
+      )}
+      {/* 缓冲提示：已发送请求但尚未收到首个 token（仅在当前 streaming 消息上显示） */}
+      {!isUser && buffering && isStreaming && (
+        <div className="flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-600 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-300">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <span className="font-medium">正在思考中…</span>
+          <span className="inline-flex gap-0.5">
+            <span className="h-1 w-1 animate-bounce rounded-full bg-blue-400 [animation-delay:0ms]" />
+            <span className="h-1 w-1 animate-bounce rounded-full bg-blue-400 [animation-delay:150ms]" />
+            <span className="h-1 w-1 animate-bounce rounded-full bg-blue-400 [animation-delay:300ms]" />
+          </span>
         </div>
       )}
       <div
@@ -129,16 +142,19 @@ function MessageBubble({ message, engineGradient, onRemove }: {
                   思考中…
                 </span>
               )}
-              {isStreaming && (
+              {message.content && (
                 <>
-                  <div className="whitespace-pre-wrap break-words text-slate-700 dark:text-slate-200">
-                    {message.content}
-                  </div>
-                  <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-current align-middle" />
+                  <Markdown>{message.content}</Markdown>
+                  {isStreaming && (
+                    <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-current align-middle" />
+                  )}
                 </>
               )}
-              {!isStreaming && message.content && (
-                <Markdown>{message.content}</Markdown>
+              {isStreaming && !message.content && (
+                <span className="inline-flex items-center gap-1.5 text-slate-400">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  接收中…
+                </span>
               )}
             </>
           ) : (
@@ -161,8 +177,8 @@ function MessageBubble({ message, engineGradient, onRemove }: {
           </button>
         )}
 
-        {/* ── 移除按钮（中断的空消息 / 无内容的 assistant 消息） ── */}
-        {!isUser && onRemove && (message.status === "interrupted" || message.status === "error") && !message.content && (
+        {/* ── 移除按钮（中断 / 出错的 assistant 消息） ── */}
+        {!isUser && onRemove && (message.status === "interrupted" || message.status === "error") && (
           <button
             type="button"
             onClick={() => onRemove(message.id)}
@@ -341,6 +357,7 @@ export default function SessionChatPage() {
     messages,
     streamingMessage,
     isGenerating,
+    buffering,
     sendChat,
     stopGeneration,
   } = useChatSocket({ sessionId, token, autoConnect: true });
@@ -417,7 +434,7 @@ export default function SessionChatPage() {
     const el = scrollContainerRef.current;
     if (!el) return;
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    // 只有用户主动向上滚动（scrollTop 减小）才标记为"上滑"
+    // 只有用户主动向上滚动（scrollTop 减小超过阈值）才标记为"上滑"
     // 避免内容增长导致的 scroll 事件误判
     if (el.scrollTop < lastScrollTopRef.current - 20) {
       setUserScrolledUp(true);
@@ -428,12 +445,6 @@ export default function SessionChatPage() {
     lastScrollTopRef.current = el.scrollTop;
   }, [isGenerating]);
 
-  // 生成期间且用户在底部时，每帧自动跟随新内容向下滚动
-  const autoScrollEnabledRef = useRef(false);
-  useEffect(() => {
-    autoScrollEnabledRef.current = isGenerating && !userScrolledUp;
-  }, [isGenerating, userScrolledUp]);
-
   // 生成结束 → 清除"回到最新"提示
   useEffect(() => {
     if (prevGeneratingRef.current && !isGenerating) {
@@ -443,33 +454,33 @@ export default function SessionChatPage() {
     prevGeneratingRef.current = isGenerating;
   }, [isGenerating]);
 
-  // 主滚动循环：生成期间且用户未上滑时，每帧强制滚到底部
+  // 主滚动循环：生成期间且用户未主动上滑时，每帧强制滚到底部。
+  // 用 RAF 而不是 ResizeObserver，因为 React 流式更新时 content 逐字
+  // 追加，RAF 能确保每一帧都跟随最新内容。
+  const autoScrollEnabledRef = useRef(false);
+  useEffect(() => {
+    autoScrollEnabledRef.current = isGenerating && !userScrolledUp;
+  }, [isGenerating, userScrolledUp]);
+
   useEffect(() => {
     if (!autoScrollEnabledRef.current) return;
     let rafId: number;
-    const scroll = () => {
-      if (autoScrollEnabledRef.current) {
-        const el = scrollContainerRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-        rafId = requestAnimationFrame(scroll);
-      }
+    const tick = () => {
+      if (!autoScrollEnabledRef.current) return;
+      const el = scrollContainerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+      rafId = requestAnimationFrame(tick);
     };
-    rafId = requestAnimationFrame(scroll);
+    rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
   }, [isGenerating]);
 
   // ResizeObserver：内容高度变化时（思考折叠/展开、新消息追加），
   // 若用户已在底部附近则自动跟随到底，避免"卡在上面"的情况。
-  const isGeneratingRef = useRef(false);
-  useEffect(() => {
-    isGeneratingRef.current = isGenerating;
-  }, [isGenerating]);
-
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
     const observer = new ResizeObserver(() => {
-      if (!isGeneratingRef.current) return;
       const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
       if (isNearBottom) {
         el.scrollTop = el.scrollHeight;
@@ -642,7 +653,7 @@ export default function SessionChatPage() {
           ) : (
             renderedMessages.map((m) => (
               <div key={m.id} id={`msg-${m.id}`}>
-                <MessageBubble message={m} engineGradient={meta.gradient} onRemove={handleRemoveMessage} />
+                <MessageBubble message={m} engineGradient={meta.gradient} onRemove={handleRemoveMessage} buffering={buffering} />
               </div>
             ))
           )}

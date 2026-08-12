@@ -19,6 +19,8 @@ export interface UseChatSocketReturn {
   readonly messages: ChatMessage[];
   readonly streamingMessage: ChatMessage | null;
   readonly isGenerating: boolean;
+  /** 已发出请求但尚未收到首个 token（思考或回答），用于显示缓冲提示 */
+  readonly buffering: boolean;
   readonly currentRequestId: string | null;
   readonly sendChat: (prompt: string, agentType?: "PI" | "GROK", thinkingLevel?: "off" | "low" | "medium" | "high") => void;
   readonly stopGeneration: () => void;
@@ -79,6 +81,10 @@ export function useChatSocket({
   const streamingMessage: ChatMessage | null = streamingBySession[sessionId] ?? null;
   const isGenerating = !!streamingMessage;
 
+  // buffering：已发出请求但尚未收到首个 token（思考或回答）
+  const firstTokenRef = useRef(true);
+  const [buffering, setBuffering] = useState(false);
+
   const clearReconnect = useCallback(() => {
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
@@ -118,12 +124,17 @@ export function useChatSocket({
           const delta = data.payload?.delta ?? "";
           if (!delta) return;
           updateStreamingContent(sessionIdLocal, delta);
+          if (firstTokenRef.current) {
+            firstTokenRef.current = false;
+            setBuffering(false);
+          }
           forceTick((n) => n + 1);
           break;
         }
         case "done": {
           const finalContent = data.payload?.content ?? "";
           const reqId = data.payload?.requestId ?? activeRequestIdRef.current;
+          firstTokenRef.current = true; // 本轮结束，重置
           if (reqId) {
             completeStreaming(sessionIdLocal, {
               id: reqId,
@@ -142,6 +153,7 @@ export function useChatSocket({
         }
         case "error": {
           const message = data.payload?.message ?? "Unknown error";
+          firstTokenRef.current = true;
           markStreamingError(sessionIdLocal, message);
           activeRequestIdRef.current = null;
           forceTick((n) => n + 1);
@@ -303,6 +315,10 @@ export function useChatSocket({
       setStreaming(sessionId, placeholder);
       registerActiveRequest(sessionId, requestId);
 
+      // 重置首 token 标记，进入缓冲等待状态
+      firstTokenRef.current = true;
+      setBuffering(true);
+
       // 3. 发往 WS
       const message: unknown = {
         type: "chat",
@@ -346,6 +362,7 @@ export function useChatSocket({
     messages,
     streamingMessage,
     isGenerating,
+    buffering,
     currentRequestId: activeRequestIdRef.current,
     sendChat,
     stopGeneration,
