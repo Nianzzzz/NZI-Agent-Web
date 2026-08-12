@@ -191,8 +191,8 @@ function MessageBubble({ message, engineGradient, onRemove, buffering, onFork }:
           </button>
         )}
 
-        {/* ── 移除按钮（中断 / 出错的 assistant 消息） ── */}
-        {!isUser && onRemove && (message.status === "interrupted" || message.status === "error") && (
+        {/* ── 移除按钮（所有消息均可移除） ── */}
+        {onRemove && (
           <button
             type="button"
             onClick={() => onRemove(message.id)}

@@ -19,6 +19,8 @@ import { JWT_SECRET } from "./config/auth.config.js";
 import { authRoutes, sessionRoutes, engineRoutes, arenaRoutes, engineConfigRoutes } from "./routes/index.js";
 import { wsChatRoutes } from "./routes/ws.route.js";
 import { initializeAdapters } from "./engine/engine-bridge.js";
+import { ArenaService } from "./services/arena.service.js";
+import { SessionService } from "./services/session.service.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 config({ path: path.join(__dirname, "../../../.env") });
@@ -158,6 +160,10 @@ fastify.get("/ready", async () => ({
   ready: true,
   timestamp: new Date().toISOString(),
 }));
+
+// ─── Arena Service（共享单例：HTTP + WS 路由共用同一内存 Map） ──
+const arenaService = new ArenaService(new SessionService(prisma));
+fastify.decorate("arenaService", arenaService);
 
 // ─── API Routes ───────────────────────────────────────────────────
 

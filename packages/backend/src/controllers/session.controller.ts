@@ -110,30 +110,6 @@ export class SessionController {
   }
 
   /**
-   * POST /api/sessions/:id/fork
-   * 从指定消息处创建分支会话
-   */
-  async fork(req: FastifyRequest<{ Params: { id: string }; Body: { forkFromMessageId?: string } }>, reply: FastifyReply) {
-    const user = req.user as TokenPayload | undefined;
-    if (!user) return reply.status(401).send({ error: "未登录或登录已过期" });
-    const result = await this.sessionService.forkSession(req.params.id, user.tenantId, req.body.forkFromMessageId);
-    if (!result) return reply.status(404).send({ error: "会话不存在" });
-    return reply.status(201).send(result);
-  }
-
-  /**
-   * GET /api/sessions/:id/tree
-   * 获取会话树（递归展开所有子会话）
-   */
-  async getTree(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
-    const user = req.user as TokenPayload | undefined;
-    if (!user) return reply.status(401).send({ error: "未登录或登录已过期" });
-    const tree = await this.sessionService.getSessionTree(req.params.id, user.tenantId);
-    if (!tree) return reply.status(404).send({ error: "会话不存在" });
-    return reply.send({ tree });
-  }
-
-  /**
    * DELETE /api/sessions/:id
    * 归档会话（软删除）
    */

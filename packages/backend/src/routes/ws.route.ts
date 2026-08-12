@@ -19,6 +19,12 @@ const wsChatRoutes: FastifyPluginAsync = async (fastify) => {
   const sessionService = new (await import("../services/session.service.js")).SessionService(fastify.prisma);
   const verify = fastify.jwt.verify.bind(fastify.jwt) as (t: string) => unknown;
 
+  // ArenaService 必须在 HTTP 和 WS 之间共享（match 存在内存 Map 中）
+  const arenaService = (fastify as unknown as { arenaService?: import("../services/arena.service.js").ArenaService }).arenaService;
+  if (!arenaService) {
+    throw new Error("ArenaService not decorated — index.ts must call fastify.decorate('arenaService', ...) before registering routes");
+  }
+
   const chatController = new WsChatController(sessionService, verify);
   fastify.get(
     "/api/ws/chat",
@@ -28,11 +34,7 @@ const wsChatRoutes: FastifyPluginAsync = async (fastify) => {
     },
   );
 
-  const arenaController = new WsArenaController(
-    new (await import("../services/arena.service.js")).ArenaService(sessionService),
-    sessionService,
-    verify,
-  );
+  const arenaController = new WsArenaController(arenaService, sessionService, verify);
   fastify.get(
     "/api/ws/arena",
     { websocket: true },

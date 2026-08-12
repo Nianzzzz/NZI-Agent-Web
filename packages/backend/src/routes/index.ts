@@ -65,14 +65,6 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/sessions/:id",
     async (req, reply) => controller.get(req as never, reply as never),
   );
-  fastify.post<{ Params: { id: string }; Body: { forkFromMessageId?: string } }>(
-    "/api/sessions/:id/fork",
-    async (req, reply) => controller.fork(req as never, reply as never),
-  );
-  fastify.get<{ Params: { id: string } }>(
-    "/api/sessions/:id/tree",
-    async (req, reply) => controller.getTree(req as never, reply as never),
-  );
   fastify.patch<{ Params: { id: string }; Body: { title?: string } }>(
     "/api/sessions/:id",
     async (req, reply) => controller.rename(req as never, reply as never),
@@ -94,8 +86,11 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
 // ─── Arena 路由（需 JWT） ──────────────────────────────────────────
 
 const arenaRoutes: FastifyPluginAsync = async (fastify) => {
-  const sessionService = new SessionService(fastify.prisma);
-  const arenaService = new ArenaService(sessionService);
+  // ArenaService 由 index.ts 通过 fastify.decorate 注入，确保与 WS 路由共享同一实例
+  const arenaService = (fastify as unknown as { arenaService?: import("../services/arena.service.js").ArenaService }).arenaService;
+  if (!arenaService) {
+    throw new Error("ArenaService not initialized — did index.ts forget to decorate it?");
+  }
   const controller = new ArenaController(arenaService);
 
   fastify.post(
