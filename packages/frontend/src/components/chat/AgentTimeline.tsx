@@ -56,6 +56,18 @@ export function CollapsibleNode({
   // 外层展开中、或本节点仍在 running → 展开内容
   const expanded = parentExpanded || isRunning;
 
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // streaming 中：每当 delta 更新时，将内部滚动区域滚到底部
+  useEffect(() => {
+    if (!isRunning || !contentRef.current) return;
+    // 下一个 microtask 里 DOM 已更新，再滚动
+    queueMicrotask(() => {
+      const el = contentRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+  }, [isRunning, node.delta]);
+
   const Icon = node.type === "tool" ? Wrench : Brain;
   const labelColor = node.type === "tool"
     ? "text-amber-700 dark:text-amber-300"
@@ -100,7 +112,7 @@ export function CollapsibleNode({
       </div>
 
       {expanded && (
-        <div className="max-h-40 overflow-y-auto border-t border-current/10 px-2.5 py-2 text-xs">
+        <div ref={contentRef} className="max-h-40 overflow-y-auto border-t border-current/10 px-2.5 py-2 text-xs">
           {node.type === "tool" && (
             <>
               {node.toolInput && (

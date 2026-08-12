@@ -111,7 +111,8 @@ fastify.addHook("onRequest", async (request, reply) => {
     url.startsWith("/api/auth/") ||
     url.startsWith("/health") ||
     url.startsWith("/ready") ||
-    url.startsWith("/api/ws/")
+    url.startsWith("/api/ws/") ||
+    url.startsWith("/api/engine/")
   ) {
     return;
   }
