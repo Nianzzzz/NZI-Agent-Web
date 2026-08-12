@@ -383,16 +383,21 @@ export default function SessionChatPage() {
   }, [messages, streamingMessage]);
 
   // ─── 智能滚动 ───────────────────────────────────────────────
-  // 用户滚动时更新状态：不在底部 = 用户主动上滑
+  // 用户滚动时更新状态：主动上滑 = 用户离开了底部
+  const lastScrollTopRef = useRef(0);
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    setUserScrolledUp(!isAtBottom);
-    // 生成期间用户上滑 → 显示"回到最新"按钮
-    if (isGenerating && !isAtBottom) {
-      setShowBackToLatest(true);
+    // 只有用户主动向上滚动（scrollTop 减小）才标记为"上滑"
+    // 避免内容增长导致的 scroll 事件误判
+    if (el.scrollTop < lastScrollTopRef.current - 20) {
+      setUserScrolledUp(true);
+      if (isGenerating) setShowBackToLatest(true);
+    } else if (isAtBottom) {
+      setUserScrolledUp(false);
     }
+    lastScrollTopRef.current = el.scrollTop;
   }, [isGenerating]);
 
   // 生成期间且用户在底部时，每帧自动跟随新内容向下滚动
@@ -410,27 +415,46 @@ export default function SessionChatPage() {
     prevGeneratingRef.current = isGenerating;
   }, [isGenerating]);
 
+  // 主滚动循环：生成期间且用户未上滑时，每帧强制滚到底部
   useEffect(() => {
     if (!autoScrollEnabledRef.current) return;
     let rafId: number;
     const scroll = () => {
       if (autoScrollEnabledRef.current) {
         const el = scrollContainerRef.current;
-        if (el) {
-          // 直接设置 scrollTop 比 scrollIntoView 更可靠：
-          // scrollIntoView 在元素已在视口内时可能不滚动，
-          // 而 scrollTop = scrollHeight 始终滚到最底部。
-          el.scrollTop = el.scrollHeight;
-        }
+        if (el) el.scrollTop = el.scrollHeight;
         rafId = requestAnimationFrame(scroll);
       }
     };
     rafId = requestAnimationFrame(scroll);
     return () => cancelAnimationFrame(rafId);
+  }, [isGenerating]);
+
+  // ResizeObserver：内容高度变化时（思考折叠/展开、新消息追加），
+  // 若用户已在底部附近则自动跟随到底，避免"卡在上面"的情况。
+  const isGeneratingRef = useRef(false);
+  useEffect(() => {
+    isGeneratingRef.current = isGenerating;
+  }, [isGenerating]);
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      if (!isGeneratingRef.current) return;
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
+      if (isNearBottom) {
+        el.scrollTop = el.scrollHeight;
+        setUserScrolledUp(false);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   const scrollToBottom = useCallback(() => {
     setUserScrolledUp(false);
+    setShowBackToLatest(false);
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, []);
 
