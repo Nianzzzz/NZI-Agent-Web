@@ -374,7 +374,13 @@ export default function SessionChatPage() {
     let rafId: number;
     const scroll = () => {
       if (autoScrollEnabledRef.current) {
-        messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+        const el = scrollContainerRef.current;
+        if (el) {
+          // 直接设置 scrollTop 比 scrollIntoView 更可靠：
+          // scrollIntoView 在元素已在视口内时可能不滚动，
+          // 而 scrollTop = scrollHeight 始终滚到最底部。
+          el.scrollTop = el.scrollHeight;
+        }
         rafId = requestAnimationFrame(scroll);
       }
     };
