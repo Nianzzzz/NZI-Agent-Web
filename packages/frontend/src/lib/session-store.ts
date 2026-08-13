@@ -27,6 +27,10 @@ interface SessionActions {
   fetchSessions: () => Promise<void>;
   createSession: (params: { title?: string; engine?: "PI" | "GROK" }) => Promise<Session>;
   renameSession: (id: string, title: string) => Promise<void>;
+  /** 本地更新会话标题（不触发 API 调用，用于 autoTitle 等后端异步更新场景） */
+  updateSessionTitle: (id: string, title: string) => void;
+  /** 重新从服务器拉取会话列表（用于 autoTitle 等异步更新后同步侧边栏） */
+  refreshSessions: () => Promise<void>;
 }
 
 export const useSessionStore = create<SessionState & SessionActions>((set, get) => ({
@@ -148,5 +152,27 @@ export const useSessionStore = create<SessionState & SessionActions>((set, get) 
       set((state) => ({ error: message }));
       throw err;
     }
+  },
+
+  updateSessionTitle: (id, title) => {
+    set((state) => ({
+      sessions: state.sessions.map((s) => (s.id === id ? { ...s, title } : s)),
+    }));
+  },
+
+  refreshSessions: async () => {
+    const token = useAuthStore.getState().token;
+    if (!token) {
+      set({ error: "未登录", sessions: [] });
+      return;
+    }
+    try {
+      const response = await fetch("/api/sessions", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return;
+      const data = (await response.json()) as { sessions: Session[] };
+      set({ sessions: data.sessions });
+    } catch { /* ignore */ }
   },
 }));

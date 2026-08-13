@@ -26,6 +26,7 @@ import { useAuthStore } from "@/lib/auth-store";
 import { useChatSocket } from "@/hooks/use-chat-socket";
 import { useChatStore, type ChatMessage } from "@/stores/chat.store";
 import { fetchSessionDetail, fetchSessionMessages, deleteMessage, deleteTurn, deleteMessagesFrom, uploadFile, type SessionDetail } from "@/lib/chat-api";
+import { useSessionStore } from "@/lib/session-store";
 import AgentTimeline from "@/components/chat/AgentTimeline";
 import Markdown from "@/components/chat/Markdown";
 import { cn } from "@/lib/utils";
@@ -420,6 +421,7 @@ export default function SessionChatPage() {
   const replaceMessages = useChatStore((s) => s.replaceMessages);
   const removeMessage = useChatStore((s) => s.removeMessage);
   const rollbackMessages = useChatStore((s) => s.rollbackMessages);
+  const updateSessionTitleLocal = useSessionStore((s) => s.updateSessionTitle);
 
   const {
     connectionStatus,
@@ -536,6 +538,23 @@ export default function SessionChatPage() {
     if (streamingMessage) list.push(streamingMessage);
     return list.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   }, [messages, streamingMessage]);
+
+  // ─── 自动标题：当会话还是默认标题且有消息时，用首轮提问生成标题 ──
+  const { refreshSessions } = useSessionStore();
+  useEffect(() => {
+    if (!session || renderedMessages.length === 0) return;
+    const defaultTitles = ["新会话", "Untitled", "Untitled Session"];
+    if (!defaultTitles.includes(session.title ?? "新会话")) return;
+    // 取第一条用户消息作为标题
+    const firstUserMsg = renderedMessages.find((m) => m.role === "user");
+    if (!firstUserMsg) return;
+    const title = firstUserMsg.content.trim().slice(0, 30) +
+      (firstUserMsg.content.trim().length > 30 ? "…" : "");
+    // 乐观更新侧边栏
+    updateSessionTitleLocal(session.id, title);
+    // 异步调用后端（已有 autoTitle 逻辑，这里只是同步侧边栏）
+    refreshSessions().catch(() => {});
+  }, [session?.title, renderedMessages.length]);
 
   // 编辑消息：回滚到该消息处（删除该消息及之后所有消息），更新内容，重新发送
   const handleEditMessage = useCallback(
