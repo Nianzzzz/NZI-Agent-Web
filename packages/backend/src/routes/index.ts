@@ -125,6 +125,10 @@ const arenaRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/arena/:id/vote",
     async (req, reply) => controller.vote(req as never, reply as never),
   );
+  fastify.post<{ Params: { id: string }; Body: { prompt: string; thinkingLevel?: "off" | "low" | "medium" | "high" } }>(
+    "/api/arena/:id/continue",
+    async (req, reply) => controller.continueMatch(req as never, reply as never),
+  );
 };
 
 // ─── 引擎配置路由（需 JWT） ──────────────────────────────────────

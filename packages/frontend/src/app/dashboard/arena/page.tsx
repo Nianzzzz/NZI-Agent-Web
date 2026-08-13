@@ -61,6 +61,7 @@ export default function ArenaPage() {
   });
   const [winner, setWinner] = useState<Winner>(null);
   const [voteSubmitted, setVoteSubmitted] = useState(false);
+  const [roundCount, setRoundCount] = useState(0);
   const wsRefs = useRef<Record<SideLabel, WebSocket | null>>({ A: null, B: null });
 
   const createMatch = useCallback(async (): Promise<ArenaMatch | null> => {
@@ -182,10 +183,28 @@ export default function ArenaPage() {
     setWinner(null);
     setVoteSubmitted(false);
 
-    const newMatch = await createMatch();
-    if (!newMatch) {
-      setIsGenerating(false);
-      return;
+    // 如果有当前对战（已投票），则继续对话；否则创建新对战
+    let newMatch: ArenaMatch | null;
+    if (match && voteSubmitted) {
+      // 继续对话：复用已有 sides
+      const res = await fetch(`/api/arena/${match.matchId}/continue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
+        body: JSON.stringify({ prompt: text.trim(), thinkingLevel }),
+      });
+      if (!res.ok) {
+        setIsGenerating(false);
+        return;
+      }
+      newMatch = await res.json();
+      setRoundCount((c) => c + 1);
+    } else {
+      newMatch = await createMatch();
+      if (!newMatch) {
+        setIsGenerating(false);
+        return;
+      }
+      setRoundCount(1);
     }
 
     setMatch(newMatch);
@@ -195,8 +214,10 @@ export default function ArenaPage() {
     });
 
     // 同时连接两个 side
-    connectSide("A", newMatch.matchId);
-    connectSide("B", newMatch.matchId);
+    if (newMatch) {
+      connectSide("A", newMatch.matchId);
+      connectSide("B", newMatch.matchId);
+    }
   };
 
   const handleStop = () => {
@@ -260,6 +281,12 @@ export default function ArenaPage() {
             <span className="text-slate-300">vs</span>
             <span>Grok Agent</span>
           </div>
+          {roundCount > 0 && (
+            <>
+              <span className="text-xs text-slate-400">·</span>
+              <span className="text-xs text-slate-500">第 {roundCount} 轮</span>
+            </>
+          )}
         </div>
       </header>
 

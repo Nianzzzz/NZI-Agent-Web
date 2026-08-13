@@ -59,4 +59,31 @@ export class ArenaController {
     const updatedMatch = await this.arenaService.getMatch(req.params.id);
     return reply.send({ ok: true, votes: updatedMatch?.votes ?? match.votes });
   }
+
+  /**
+   * POST /api/arena/:id/continue
+   * 继续一场已存在的对战（多轮对话）
+   * 复用已有的两个 side session，追加新一轮对话
+   */
+  async continueMatch(req: FastifyRequest<{ Params: { id: string }; Body: { prompt: string; thinkingLevel?: "off" | "low" | "medium" | "high" } }>, reply: FastifyReply) {
+    const user = req.user as TokenPayload | undefined;
+    if (!user) return reply.status(401).send({ error: "未登录或登录已过期" });
+
+    const { prompt, thinkingLevel = "off" } = req.body;
+    if (!prompt || !prompt.trim()) return reply.status(400).send({ error: "prompt 不能为空" });
+
+    const match = await this.arenaService.getMatch(req.params.id);
+    if (!match || match.tenantId !== user.tenantId) {
+      return reply.status(404).send({ error: "对战不存在" });
+    }
+
+    // 返回已有 sides 信息，前端用这些信息重新连接 WS 进行下一轮
+    return reply.send({
+      matchId: match.id,
+      prompt: prompt.trim(),
+      thinkingLevel: match.thinkingLevel,
+      sides: match.sides,
+      createdAt: match.createdAt,
+    });
+  }
 }
