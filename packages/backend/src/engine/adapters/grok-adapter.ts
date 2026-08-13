@@ -287,7 +287,17 @@ export class GrokAdapter implements IEngineAdapter {
   }
 
   private _errorEvent(options: PromptOptions, err: unknown): NZiAgentEvent {
-    const message = err instanceof Error ? err.message : String(err);
+    let message = err instanceof Error ? err.message : String(err);
+    // 分类常见 API 错误，给用户友好提示
+    if (message.includes("403") || message.toLowerCase().includes("forbidden")) {
+      message = "API 密钥无效或无权访问该模型（403 Forbidden）。请检查 BAILIAN_API_KEY 配置。";
+    } else if (message.includes("429") || message.toLowerCase().includes("rate limit") || message.toLowerCase().includes("too many requests")) {
+      message = "请求过于频繁，请稍后再试（429 Rate Limit）。";
+    } else if (message.toLowerCase().includes("insufficient quota") || message.toLowerCase().includes("balance")) {
+      message = "API 账户余额不足或免费额度已用完，请充值后重试。";
+    } else if (message.toLowerCase().includes("model not found") || message.toLowerCase().includes("invalid model")) {
+      message = `模型不可用。请检查 .env 中的模型配置（GROK_MODEL）。详情: ${message}`;
+    }
     return {
       id: `evt_${crypto.randomUUID()}`,
       sessionId: options.sessionId,
