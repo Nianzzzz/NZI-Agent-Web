@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Bot, Cpu, Send, Square, Loader2, Sparkles,
@@ -338,6 +339,16 @@ export default function ArenaPage() {
           <div className="mx-auto flex max-w-2xl items-center justify-center gap-2 text-sm text-emerald-700 dark:text-emerald-300">
             <CheckCircle2 className="h-4 w-4" />
             已投票：{winner === "tie" ? "平局" : `Side ${winner} 获胜`}
+            {/* 跳转到 Arena 会话查看详情 */}
+            {match && (
+              <Link
+                href={`/dashboard/session/${match.sides[0].sessionId}`}
+                className="ml-4 inline-flex items-center gap-1.5 rounded-full border border-emerald-400 px-3 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/30"
+              >
+                <Trophy className="h-3 w-3" />
+                查看对战会话
+              </Link>
+            )}
           </div>
         </div>
       )}
