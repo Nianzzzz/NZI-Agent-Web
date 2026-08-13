@@ -174,4 +174,16 @@ export class SessionController {
 
     return reply.send({ messages });
   }
+
+  /**
+   * GET /api/sessions/:id/tree
+   * 获取会话树（用于 Session Tree 可视化）
+   */
+  async getTree(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+    const user = req.user as TokenPayload | undefined;
+    if (!user) return reply.status(401).send({ error: "未登录或登录已过期" });
+    const tree = await this.sessionService.getTree(req.params.id, user.tenantId);
+    if (!tree) return reply.status(404).send({ error: "会话不存在" });
+    return reply.send({ tree });
+  }
 }

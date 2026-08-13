@@ -285,4 +285,55 @@ export class SessionService {
       take: limit,
     });
   }
+
+  /**
+   * 获取会话树（从指定 session 出发，递归获取所有子孙会话）
+   * 用于 Session Tree 可视化页面
+   */
+  async getTree(sessionId: string, tenantId: string) {
+    // 先验证根 session 属于该租户
+    const root = await this.prisma.session.findFirst({
+      where: { id: sessionId, tenantId },
+      select: { id: true },
+    });
+    if (!root) return null;
+
+    // 递归获取子树
+    const buildTree = async (parentId: string | null): Promise<Array<{
+      id: string;
+      title: string | null;
+      engine: string;
+      createdAt: Date;
+      children: unknown[];
+    }>> => {
+      const children = await this.prisma.session.findMany({
+        where: { parentSessionId: parentId, status: { not: "DELETED" } },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, title: true, engine: true, createdAt: true },
+      });
+
+      const tree = [];
+      for (const child of children) {
+        const descendants = await buildTree(child.id);
+        tree.push({
+          ...child,
+          children: descendants,
+        });
+      }
+      return tree;
+    };
+
+    const rootSession = await this.prisma.session.findUnique({
+      where: { id: sessionId },
+      select: { id: true, title: true, engine: true, createdAt: true },
+    });
+    if (!rootSession) return null;
+
+    const children = await buildTree(sessionId);
+
+    return {
+      ...rootSession,
+      children,
+    };
+  }
 }

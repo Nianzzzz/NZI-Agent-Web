@@ -90,6 +90,10 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/sessions/:id/messages",
     async (req, reply) => controller.getMessages(req as never, reply as never),
   );
+  fastify.get<{ Params: { id: string } }>(
+    "/api/sessions/:id/tree",
+    async (req, reply) => controller.getTree(req as never, reply as never),
+  );
 
   // ── 文件上传 ──────────────────────────────────────────────
   const fileController = new FileController();

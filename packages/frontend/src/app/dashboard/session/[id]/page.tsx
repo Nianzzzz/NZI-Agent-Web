@@ -18,7 +18,7 @@ import {
   ArrowLeft, Bot, Cpu, Send, Square, Loader2,
   Sparkles, AlertCircle, CheckCircle2, MessageSquare, User as UserIcon, Brain,
   ChevronDown, ChevronRight, Copy, Check, Trash2, Pencil, RefreshCw,
-  Paperclip, FolderOpen, X,
+  Paperclip, FolderOpen, X, GitBranch,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -817,6 +817,19 @@ export default function SessionChatPage() {
               />
             </div>
           </div>
+
+          {/* 会话树入口 */}
+          <Link href={`/dashboard/session/${sessionId}/tree`}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+              title="查看会话树"
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              分支
+            </Button>
+          </Link>
         </div>
       </header>
 
