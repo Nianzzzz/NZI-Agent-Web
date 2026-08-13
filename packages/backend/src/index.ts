@@ -164,8 +164,8 @@ fastify.get("/ready", async () => ({
   timestamp: new Date().toISOString(),
 }));
 
-// ─── Arena Service（共享单例：HTTP + WS 路由共用同一内存 Map） ──
-const arenaService = new ArenaService(new SessionService(prisma));
+// ─── Arena Service（共享单例：HTTP + WS 路由共用同一实例，持久化到 DB） ──
+const arenaService = new ArenaService(new SessionService(prisma), prisma);
 fastify.decorate("arenaService", arenaService);
 
 // ─── 文件上传（multipart）───────────────────────────────────────

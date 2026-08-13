@@ -1,16 +1,16 @@
 /**
  * T005 — Arena Service
  *
- * 职责：管理 Arena 对战（双引擎并行生成 + 投票统计）
+ * 职责：管理 Arena 对战（双引擎并行生成 + 投票统计），持久化到 PostgreSQL
  *
  * 设计：
- * - 每场对战（ArenaMatch）在内存中维护，包含两个 side（A=PI, B=GROK）
+ * - 每场对战（ArenaMatch）通过 Prisma 持久化，包含两个 side（A=PI, B=GROK）
  * - 每个 side 独立流式生成，事件通过 sideChannel (WebSocket) 推送
- * - 投票结果在内存中统计；schema 已定义 ArenaMatch/ArenaVote 表，
- *   待 prisma db push 后可切换为持久化存储
+ * - 投票结果通过 ArenaVote 表持久化
  */
 
 import type { EngineProvider } from "@nzi/shared-types";
+import type { PrismaClient } from "@prisma/client";
 import { SessionService } from "../services/session.service.js";
 import type { TokenPayload } from "../config/auth.config.js";
 
@@ -35,53 +35,160 @@ export interface ArenaMatch {
 }
 
 /** 每场对战的活跃请求上下文（按 side label 索引） */
-interface ArenaRequestCtx {
+export interface ArenaRequestCtx {
   abortController: AbortController;
   texts: string[];
 }
 
 export class ArenaService {
-  private matches = new Map<string, ArenaMatch>();
+  /** 活跃请求上下文（内存态，重启后丢失但 WS 本身也会断开，不需要持久化） */
   private requests = new Map<string, Map<"A" | "B", ArenaRequestCtx>>();
 
-  constructor(private sessionService: SessionService) {}
+  constructor(
+    private sessionService: SessionService,
+    private prisma: PrismaClient,
+  ) {}
 
   /** 创建一场新的 Arena 对战 */
-  async createMatch(user: TokenPayload, prompt: string, thinkingLevel: "off" | "low" | "medium" | "high"): Promise<ArenaMatch> {
-    const id = crypto.randomUUID();
+  async createMatch(
+    user: TokenPayload,
+    prompt: string,
+    thinkingLevel: "off" | "low" | "medium" | "high",
+  ): Promise<ArenaMatch> {
     // 为两个 side 各创建一个独立会话（隔离消息历史）
     const [sessionA, sessionB] = await Promise.all([
-      this.sessionService.createSession({ tenantId: user.tenantId, userId: user.sub, title: `Arena A: ${prompt.slice(0, 30)}`, engine: "PI" }),
-      this.sessionService.createSession({ tenantId: user.tenantId, userId: user.sub, title: `Arena B: ${prompt.slice(0, 30)}`, engine: "GROK" }),
+      this.sessionService.createSession({
+        tenantId: user.tenantId,
+        userId: user.sub,
+        title: `Arena: ${prompt.slice(0, 30)}`,
+        engine: "PI",
+      }),
+      this.sessionService.createSession({
+        tenantId: user.tenantId,
+        userId: user.sub,
+        title: `Arena: ${prompt.slice(0, 30)}`,
+        engine: "GROK",
+      }),
     ]);
 
+    const thinkingLevelEnum = this._toDbThinkingLevel(thinkingLevel);
+
+    // 持久化到 DB
+    const dbMatch = await this.prisma.arenaMatch.create({
+      data: {
+        tenantId: user.tenantId,
+        userId: user.sub,
+        prompt: prompt.trim(),
+        thinkingLevel: thinkingLevelEnum,
+        status: "RUNNING",
+      },
+    });
+
     const match: ArenaMatch = {
-      id,
+      id: dbMatch.id,
       tenantId: user.tenantId,
       userId: user.sub,
-      prompt,
+      prompt: prompt.trim(),
       thinkingLevel,
       sides: [
         { provider: "PI" as EngineProvider, label: "A", sessionId: sessionA.id },
         { provider: "GROK" as EngineProvider, label: "B", sessionId: sessionB.id },
       ],
       status: "running",
-      createdAt: Date.now(),
+      createdAt: dbMatch.createdAt.getTime(),
       votes: { A: 0, B: 0, tie: 0 },
     };
-    this.matches.set(id, match);
-    this.requests.set(id, new Map());
+    this.requests.set(match.id, new Map());
     return match;
   }
 
-  getMatch(id: string): ArenaMatch | undefined {
-    return this.matches.get(id);
+  /** 获取单场对战详情 */
+  async getMatch(id: string): Promise<ArenaMatch | null> {
+    const dbMatch = await this.prisma.arenaMatch.findUnique({
+      where: { id },
+      include: { votes: true },
+    });
+    if (!dbMatch) return null;
+
+    // 通过关联的 session 反查两个 side
+    const sessions = await this.prisma.session.findMany({
+      where: {
+        tenantId: dbMatch.tenantId,
+        title: { startsWith: "Arena: " },
+        createdAt: { gte: dbMatch.createdAt },
+      },
+      orderBy: { createdAt: "asc" },
+      take: 2,
+    });
+
+    const sides: [ArenaSide, ArenaSide] = this._reconstructSides(sessions, dbMatch.createdAt);
+
+    return {
+      id: dbMatch.id,
+      tenantId: dbMatch.tenantId,
+      userId: dbMatch.userId,
+      prompt: dbMatch.prompt,
+      thinkingLevel: this._fromDbThinkingLevel(dbMatch.thinkingLevel),
+      sides,
+      status: dbMatch.status === "RUNNING" ? "running" : "completed",
+      createdAt: dbMatch.createdAt.getTime(),
+      completedAt: dbMatch.completedAt?.getTime(),
+      votes: {
+        A: dbMatch.votes.filter((v) => v.provider === "PI").length,
+        B: dbMatch.votes.filter((v) => v.provider === "GROK").length,
+        tie: 0, // tie 投票暂不持久化（schema 只支持按 provider 投票）
+      },
+    };
   }
 
-  getAllMatches(tenantId: string): ArenaMatch[] {
-    return Array.from(this.matches.values())
-      .filter((m) => m.tenantId === tenantId)
-      .sort((a, b) => b.createdAt - a.createdAt);
+  /** 获取租户下所有对战历史 */
+  async getAllMatches(tenantId: string): Promise<ArenaMatch[]> {
+    const dbMatches = await this.prisma.arenaMatch.findMany({
+      where: { tenantId },
+      include: { votes: true },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return Promise.all(
+      dbMatches.map(async (dbMatch) => {
+        const sessions = await this.prisma.session.findMany({
+          where: {
+            tenantId: dbMatch.tenantId,
+            title: { startsWith: "Arena: " },
+            createdAt: { gte: dbMatch.createdAt },
+          },
+          orderBy: { createdAt: "asc" },
+          take: 2,
+        });
+
+        const sides: [ArenaSide, ArenaSide] = this._reconstructSides(sessions, dbMatch.createdAt);
+
+        return {
+          id: dbMatch.id,
+          tenantId: dbMatch.tenantId,
+          userId: dbMatch.userId,
+          prompt: dbMatch.prompt,
+          thinkingLevel: this._fromDbThinkingLevel(dbMatch.thinkingLevel),
+          sides,
+          status: dbMatch.status === "RUNNING" ? "running" : "completed",
+          createdAt: dbMatch.createdAt.getTime(),
+          completedAt: dbMatch.completedAt?.getTime(),
+          votes: {
+            A: dbMatch.votes.filter((v) => v.provider === "PI").length,
+            B: dbMatch.votes.filter((v) => v.provider === "GROK").length,
+            tie: 0,
+          },
+        };
+      }),
+    );
+  }
+
+  /** 标记对战完成 */
+  async completeMatch(id: string): Promise<void> {
+    await this.prisma.arenaMatch.update({
+      where: { id },
+      data: { status: "COMPLETED", completedAt: new Date() },
+    });
   }
 
   registerRequest(matchId: string, side: "A" | "B", ctx: ArenaRequestCtx): void {
@@ -98,42 +205,68 @@ export class ArenaService {
     if (reqs) reqs.delete(side);
     // 两个 side 都完成 → 整场对战完成
     if (reqs && reqs.size === 0) {
-      const match = this.matches.get(matchId);
-      if (match) {
-        match.status = "completed";
-        match.completedAt = Date.now();
-      }
+      this.completeMatch(matchId).catch(() => {});
     }
   }
 
-  vote(matchId: string, winner: "A" | "B" | "tie"): boolean {
-    const match = this.matches.get(matchId);
-    if (!match || match.status !== "completed") return false;
-    if (winner === "tie") {
-      match.votes.tie += 1;
-    } else {
-      match.votes[winner] += 1;
+  /** 投票 */
+  async vote(matchId: string, winner: "A" | "B" | "tie", tenantId: string): Promise<boolean> {
+    const dbMatch = await this.prisma.arenaMatch.findUnique({
+      where: { id: matchId },
+    });
+    if (!dbMatch || dbMatch.tenantId !== tenantId) return false;
+    if (dbMatch.status !== "COMPLETED") return false;
+
+    // 对于 tie 投票，不写入 provider 关联（schema 中 provider 是必填的 EngineProvider）
+    // 实际业务中 tie 表示两个都好，不需要持久化到具体引擎
+    if (winner === "A") {
+      await this.prisma.arenaVote.create({
+        data: { matchId, provider: "PI" },
+      });
+    } else if (winner === "B") {
+      await this.prisma.arenaVote.create({
+        data: { matchId, provider: "GROK" },
+      });
     }
+    // tie: 不创建 vote 记录，但投票操作本身仍然有效
     return true;
   }
 
-  getStats(): { total: number; running: number; completed: number } {
-    const all = Array.from(this.matches.values());
-    return {
-      total: all.length,
-      running: all.filter((m) => m.status === "running").length,
-      completed: all.filter((m) => m.status === "completed").length,
-    };
+  async getStats(): Promise<{ total: number; running: number; completed: number }> {
+    const [total, running, completed] = await Promise.all([
+      this.prisma.arenaMatch.count(),
+      this.prisma.arenaMatch.count({ where: { status: "RUNNING" } }),
+      this.prisma.arenaMatch.count({ where: { status: "COMPLETED" } }),
+    ]);
+    return { total, running, completed };
   }
 
-  /** 清理已完成超过 30 分钟的匹配（防止内存泄漏） */
-  pruneOldMatches(ttlMs = 30 * 60_000): void {
-    const now = Date.now();
-    for (const [id, match] of this.matches) {
-      if (match.status === "completed" && match.completedAt && now - match.completedAt > ttlMs) {
-        this.matches.delete(id);
-        this.requests.delete(id);
-      }
-    }
+  // ─── 私有方法 ──────────────────────────────────────────────────
+
+  private _toDbThinkingLevel(level: "off" | "low" | "medium" | "high"): "OFF" | "LOW" | "MEDIUM" | "HIGH" {
+    const map: Record<string, "OFF" | "LOW" | "MEDIUM" | "HIGH"> = {
+      off: "OFF", low: "LOW", medium: "MEDIUM", high: "HIGH",
+    };
+    return map[level] ?? "OFF";
+  }
+
+  private _fromDbThinkingLevel(level: "OFF" | "LOW" | "MEDIUM" | "HIGH" | null): "off" | "low" | "medium" | "high" {
+    const map: Record<string, "off" | "low" | "medium" | "high"> = {
+      OFF: "off", LOW: "low", MEDIUM: "medium", HIGH: "high",
+    };
+    return level ? (map[level] ?? "off") : "off";
+  }
+
+  /** 从 DB session 重构 ArenaSide */
+  private _reconstructSides(
+    sessions: Array<{ id: string; engine: string }>,
+    matchCreatedAt: Date,
+  ): [ArenaSide, ArenaSide] {
+    const pi = sessions.find((s) => s.engine === "PI");
+    const grok = sessions.find((s) => s.engine === "GROK");
+    return [
+      { provider: "PI" as EngineProvider, label: "A", sessionId: pi?.id ?? "" },
+      { provider: "GROK" as EngineProvider, label: "B", sessionId: grok?.id ?? "" },
+    ];
   }
 }

@@ -64,19 +64,23 @@ export class WsArenaController {
       return;
     }
 
-    const match = this.arenaService.getMatch(matchId);
-    if (!match || match.tenantId !== user.tenantId) {
+    // 异步获取 match 并注册 handler
+    this.arenaService.getMatch(matchId).then((match) => {
+      if (!match || match.tenantId !== user.tenantId) {
+        socket.close(4004, "Match not found");
+        return;
+      }
+
+      const sideInfo = match.sides.find((s) => s.label === side);
+      if (!sideInfo) {
+        socket.close(4003, "Invalid side");
+        return;
+      }
+
+      this.attachSocketHandlers(socket, user, matchId, side as "A" | "B", sideInfo);
+    }).catch(() => {
       socket.close(4004, "Match not found");
-      return;
-    }
-
-    const sideInfo = match.sides.find((s) => s.label === side);
-    if (!sideInfo) {
-      socket.close(4003, "Invalid side");
-      return;
-    }
-
-    this.attachSocketHandlers(socket, user, matchId, side as "A" | "B", sideInfo);
+    });
   }
 
   private attachSocketHandlers(
@@ -95,11 +99,13 @@ export class WsArenaController {
     this.arenaService.registerRequest(matchId, side, { abortController, texts });
 
     // 写入用户提问到该 side 的会话
-    void this.sessionService.createMessage({
-      sessionId: sideInfo.sessionId,
-      role: "USER",
-      content: this.arenaService.getMatch(matchId)?.prompt ?? "",
-      latencyMs: 0,
+    this.arenaService.getMatch(matchId).then((m) => {
+      void this.sessionService.createMessage({
+        sessionId: sideInfo.sessionId,
+        role: "USER",
+        content: m?.prompt ?? "",
+        latencyMs: 0,
+      });
     });
 
     this.sendSocket(socket, {
@@ -120,10 +126,7 @@ export class WsArenaController {
         const parsed = JSON.parse(rawStr) as { type: string; payload: { requestId?: string } };
         if (parsed.type === "stop") {
           abortController.abort();
-          const match = this.arenaService.getMatch(matchId);
-          if (match) {
-            this.arenaService.completeSide(matchId, side);
-          }
+          this.arenaService.completeSide(matchId, side);
           this.sendSocket(socket, {
             type: "interrupted",
             payload: { requestId, content: texts.join(""), reason: "user_stop" },
@@ -153,7 +156,7 @@ export class WsArenaController {
     startTime: number,
     user: TokenPayload,
   ) {
-    const match = this.arenaService.getMatch(matchId);
+    const match = await this.arenaService.getMatch(matchId);
     if (!match) return;
 
     const provider = sideInfo.provider;
