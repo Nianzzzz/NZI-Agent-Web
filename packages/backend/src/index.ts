@@ -142,7 +142,8 @@ fastify.addHook("onRequest", async (request, reply) => {
       tenantId: payload.tenantId,
       role: payload.role,
     };
-  } catch {
+  } catch (err) {
+    console.error("[jwt verify failed]", request.url, (err as Error).message);
     return reply.status(401).send({ error: "未登录或登录已过期" });
   }
 });

@@ -49,7 +49,7 @@ export async function fetchSessionDetail(id: string): Promise<SessionDetail | nu
 export async function deleteMessage(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/api/messages/${id}`, {
     method: "DELETE",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
+    headers: { ...authHeaders() },
   });
   if (res.status === 404) throw new Error("消息不存在或无权限");
   if (!res.ok) throw new Error(`Failed to delete message: ${res.status}`);
@@ -59,7 +59,7 @@ export async function deleteMessage(id: string): Promise<void> {
 export async function deleteTurn(id: string): Promise<number> {
   const res = await fetch(`${API_BASE}/api/messages/${id}/turn`, {
     method: "DELETE",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
+    headers: { ...authHeaders() },
   });
   if (res.status === 404) throw new Error("消息不存在或无权限");
   if (!res.ok) throw new Error(`Failed to delete turn: ${res.status}`);
@@ -71,7 +71,7 @@ export async function deleteTurn(id: string): Promise<number> {
 export async function deleteMessagesFrom(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/api/messages/${id}/after`, {
     method: "DELETE",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
+    headers: { ...authHeaders() },
   });
   if (res.status === 404) throw new Error("消息不存在或无权限");
   if (!res.ok) throw new Error(`Failed to delete messages from: ${res.status}`);
