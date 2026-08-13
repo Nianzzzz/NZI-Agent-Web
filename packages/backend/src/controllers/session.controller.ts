@@ -96,8 +96,10 @@ export class SessionController {
    */
   async deleteTurn(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
     const user = req.user as TokenPayload | undefined;
+    console.log("[deleteTurn] called, id:", req.params.id, "user:", user?.sub ?? "none");
     if (!user) return reply.status(401).send({ error: "未登录或登录已过期" });
     const count = await this.sessionService.deleteTurn(req.params.id, user.tenantId);
+    console.log("[deleteTurn] deleted count:", count);
     if (count === 0) return reply.status(404).send({ error: "消息不存在或无权限" });
     return reply.send({ deletedCount: count });
   }
