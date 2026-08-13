@@ -51,11 +51,6 @@ const CAPABILITIES: Capability[] = [
     mock: false, piPhase1: false, piPhase2: true,
   },
   {
-    name: "Session tree (branch / fork)",
-    description: "Fork any message into a new branch, then compare two branches side by side.",
-    mock: false, piPhase1: false, piPhase2: true,
-  },
-  {
     name: "Arena (side-by-side)",
     description: "Run two models on the same prompt and compare answers in one view.",
     mock: false, piPhase1: false, piPhase2: true,

@@ -17,7 +17,7 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Bot, Cpu, Send, Square, Loader2,
   Sparkles, AlertCircle, CheckCircle2, MessageSquare, User as UserIcon, Brain,
-  ChevronDown, ChevronRight, Copy, Check, Trash2, GitBranch,
+  ChevronDown, ChevronRight, Copy, Check, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -72,12 +72,11 @@ function ReasoningBox({ nodes }: {
 
 // ─── 消息气泡 ─────────────────────────────────────────────────────
 
-function MessageBubble({ message, engineGradient, onRemove, buffering, onFork }: {
+function MessageBubble({ message, engineGradient, onRemove, buffering }: {
   message: ChatMessage;
   engineGradient: string;
   onRemove?: (messageId: string) => void;
   buffering?: boolean;
-  onFork?: () => void;
 }) {
   const isUser = message.role === "user";
   const isStreaming = message.status === "streaming";
@@ -164,19 +163,6 @@ function MessageBubble({ message, engineGradient, onRemove, buffering, onFork }:
             </div>
           )}
         </div>
-
-        {/* ── 分支按钮（用户消息） ── */}
-        {isUser && onFork && (
-          <button
-            type="button"
-            onClick={onFork}
-            className="absolute -right-2 top-2 z-10 flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 opacity-0 shadow-sm transition-all group-hover:opacity-100 hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800"
-            title="从此处创建分支"
-          >
-            <GitBranch className="h-3 w-3" />
-            分支
-          </button>
-        )}
 
         {/* ── 复制按钮（仅 assistant 答案） ── */}
         {!isUser && message.content && message.status === "completed" && (
@@ -613,32 +599,9 @@ export default function SessionChatPage() {
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <p className="truncate text-sm font-semibold text-foreground">
-                {session?.title || "未命名会话"}
-              </p>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const res = await fetch(`/api/sessions/${sessionId}/fork`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
-                      body: JSON.stringify({}),
-                    });
-                    if (res.ok) {
-                      const data = (await res.json()) as { id: string };
-                      router.push(`/dashboard/session/${data.id}`);
-                    }
-                  } catch { /* ignore */ }
-                }}
-                className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 opacity-0 shadow-sm transition-all hover:border-blue-300 hover:text-blue-600 group-[.header-actions-visible]:opacity-100 dark:border-slate-700 dark:bg-slate-800"
-                title="从此处创建分支"
-              >
-                <GitBranch className="h-3 w-3" />
-                分支
-              </button>
-            </div>
+            <p className="truncate text-sm font-semibold text-foreground">
+              {session?.title || "未命名会话"}
+            </p>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className={cn(
                 "inline-flex items-center gap-1 rounded-full bg-gradient-to-r px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white",
@@ -695,19 +658,6 @@ export default function SessionChatPage() {
                   engineGradient={meta.gradient}
                   onRemove={handleRemoveMessage}
                   buffering={buffering}
-                  onFork={isUserMessage(m) ? async () => {
-                    try {
-                      const res = await fetch(`/api/sessions/${sessionId}/fork`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
-                        body: JSON.stringify({ forkFromMessageId: m.id }),
-                      });
-                      if (res.ok) {
-                        const data = (await res.json()) as { id: string };
-                        router.push(`/dashboard/session/${data.id}`);
-                      }
-                    } catch { /* ignore */ }
-                  } : undefined}
                 />
               </div>
             ))
