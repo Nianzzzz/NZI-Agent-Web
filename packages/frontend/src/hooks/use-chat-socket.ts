@@ -54,6 +54,8 @@ export function useChatSocket({
   const connectingRef = useRef(false);
   const mountedRef = useRef(true); // T010: track mount to prevent updates after unmount
   const [, forceTick] = useState(0);
+  // 消息队列：WS 断开期间暂存 chat 消息，重连后自动重发
+  const pendingQueueRef = useRef<Array<{ prompt: string; agentType: "PI" | "GROK"; thinkingLevel: "off" | "low" | "medium" | "high"; workingDirectory?: string }>>([]);
 
   const {
     connectionStatus,
@@ -215,6 +217,42 @@ export function useChatSocket({
       reconnectAttemptsRef.current = 0;
       clearReconnect();
       onConnect?.();
+
+      // 重连成功后，将断线期间排队的消息依次重发（最多重发 3 条，防止积压过多）
+      let flushed = 0;
+      while (pendingQueueRef.current.length > 0 && flushed < 3) {
+        const item = pendingQueueRef.current.shift()!;
+        const ws2 = wsRef.current;
+        if (!ws2 || ws2.readyState !== WebSocket.OPEN) break;
+        const userMessageId = crypto.randomUUID();
+        const userMessage: ChatMessage = {
+          id: userMessageId,
+          sessionId,
+          role: "user",
+          content: item.prompt,
+          status: "completed",
+          createdAt: new Date(),
+        };
+        appendMessage(sessionId, userMessage);
+        const requestId = crypto.randomUUID();
+        activeRequestIdRef.current = requestId;
+        setStreaming(sessionId, {
+          id: requestId,
+          sessionId,
+          role: "assistant",
+          content: "",
+          status: "streaming",
+          createdAt: new Date(),
+        });
+        registerActiveRequest(sessionId, requestId);
+        firstTokenRef.current = true;
+        setBuffering(true);
+        ws2.send(JSON.stringify({
+          type: "chat",
+          payload: { sessionId, agentType: item.agentType, prompt: item.prompt, thinkingLevel: item.thinkingLevel, workingDirectory: item.workingDirectory, userMessageId },
+        }));
+        flushed++;
+      }
     });
 
     ws.addEventListener("message", (event) => {
@@ -284,8 +322,17 @@ export function useChatSocket({
   const sendChat = useCallback(
     (prompt: string, agentType: "PI" | "GROK" = "PI", thinkingLevel: "off" | "low" | "medium" | "high" = "off", workingDirectory?: string) => {
       const ws = wsRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        onError?.("WebSocket is not connected");
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        // 正常发送
+      } else {
+        // WS 未连接：将消息加入队列，重连后自动重发（最多 3 条）
+        if (pendingQueueRef.current.length < 3) {
+          pendingQueueRef.current.push({ prompt, agentType, thinkingLevel, workingDirectory });
+          setConnectionStatus("disconnected");
+          onError?.("WebSocket 已断开，消息已加入队列，重连后将自动重发");
+        } else {
+          onError?.("消息队列已满（最多 3 条），请稍后再试");
+        }
         return;
       }
 
@@ -331,7 +378,7 @@ export function useChatSocket({
       ws.send(JSON.stringify(message));
       forceTick((n) => n + 1);
     },
-    [sessionId, appendMessage, setStreaming, registerActiveRequest, onError],
+    [sessionId, appendMessage, setStreaming, registerActiveRequest, onError, setConnectionStatus],
   );
 
   const stopGeneration = useCallback(() => {
