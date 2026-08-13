@@ -406,6 +406,8 @@ export default function SessionChatPage() {
   const [attachments, setAttachments] = useState<Array<{ file: File; url: string }>>([]);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // 防止用户快速连击导致同一条消息被发送两次
+  const sendingRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -640,6 +642,9 @@ export default function SessionChatPage() {
     const text = draft.trim();
     if (!text && attachments.length === 0) return;
     if (isGenerating) return;
+    // 防重复发送：上一次 sendChat 还未完成（uploading 状态）时忽略
+    if (sendingRef.current) return;
+    sendingRef.current = true;
 
     let prompt = text;
 
@@ -672,6 +677,8 @@ export default function SessionChatPage() {
     // 释放 object URL
     attachments.forEach((a) => URL.revokeObjectURL(a.url));
     setAttachments([]);
+    // 下一帧释放发送锁，允许再次发送
+    requestAnimationFrame(() => { sendingRef.current = false; });
   }, [draft, attachments, isGenerating, sessionId, sendChat, currentEngine, thinkingLevel, workingDirectory]);
 
   const handleKeyDown = useCallback(
