@@ -188,6 +188,8 @@ export class WsChatController {
               agentType?: "PI" | "GROK";
               prompt: string;
               thinkingLevel?: "off" | "low" | "medium" | "high";
+              workingDirectory?: string;
+              userMessageId?: string;
             },
             activeRequests,
           );
@@ -222,13 +224,13 @@ export class WsChatController {
   private async handleChat(
     socket: WebSocket,
     user: TokenPayload,
-    payload: { sessionId: string; agentType?: "PI" | "GROK"; prompt: string; thinkingLevel?: "off" | "low" | "medium" | "high"; workingDirectory?: string },
+    payload: { sessionId: string; agentType?: "PI" | "GROK"; prompt: string; thinkingLevel?: "off" | "low" | "medium" | "high"; workingDirectory?: string; userMessageId?: string },
     activeRequests: Map<
       string,
       RequestContext & { sessionId: string; rootEventId?: string; provider: EngineProvider }
     >,
   ) {
-    const { sessionId, prompt, agentType = "PI", thinkingLevel = "off", workingDirectory } = payload;
+    const { sessionId, prompt, agentType = "PI", thinkingLevel = "off", workingDirectory, userMessageId } = payload;
     const provider = EngineProvider[agentType as keyof typeof EngineProvider] ?? EngineProvider.PI;
 
     // 唯一请求 ID，前端 stop 时传入此 ID 中断
@@ -248,6 +250,7 @@ export class WsChatController {
     let rootEventId: string | undefined;
     try {
       await this.sessionService.createMessage({
+        id: userMessageId, // 复用前端生成的 UUID，保证前后端 ID 一致
         sessionId,
         role: "USER",
         content: prompt,

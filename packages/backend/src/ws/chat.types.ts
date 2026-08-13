@@ -21,6 +21,8 @@ export interface ChatMessagePayload {
   thinkingLevel?: "off" | "low" | "medium" | "high";
   /** 工具执行的工作目录（绝对路径），影响 read_file / run_shell 等工具的 cwd */
   workingDirectory?: string;
+  /** 前端生成的用户消息 ID（UUID），后端落库时复用，保证前后端 ID 一致（删除时可按 ID 定位） */
+  userMessageId?: string;
 }
 
 /** 客户端 -> 服务端：停止生成 */
@@ -153,6 +155,8 @@ export const ChatPayloadSchema = z.object({
     .optional()
     .default("off"),
   workingDirectory: z.string().optional(),
+  /** 前端生成的用户消息 ID（UUID），落库时复用，保证前后端 ID 一致 */
+  userMessageId: z.string().optional(),
 });
 
 /** 入站 stop 消息 payload */

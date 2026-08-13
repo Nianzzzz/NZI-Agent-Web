@@ -292,9 +292,13 @@ export function useChatSocket({
       const requestId = crypto.randomUUID();
       activeRequestIdRef.current = requestId;
 
+      // 前端生成用户消息 ID（UUID），与后端落库 ID 保持一致，
+      // 确保删除/回滚时前后端能按同一个 ID 定位到同一条消息。
+      const userMessageId = crypto.randomUUID();
+
       // 1. 立即把 USER 消息写进列表
       const userMessage: ChatMessage = {
-        id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: userMessageId,
         sessionId,
         role: "user",
         content: prompt,
@@ -322,7 +326,7 @@ export function useChatSocket({
       // 3. 发往 WS
       const message: unknown = {
         type: "chat",
-        payload: { sessionId, agentType, prompt, thinkingLevel, workingDirectory },
+        payload: { sessionId, agentType, prompt, thinkingLevel, workingDirectory, userMessageId },
       };
       ws.send(JSON.stringify(message));
       forceTick((n) => n + 1);
