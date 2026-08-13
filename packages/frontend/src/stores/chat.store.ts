@@ -63,6 +63,8 @@ interface ChatActions {
   replaceMessages: (sessionId: string, messages: ChatMessage[]) => void;
   /** 从消息列表中移除一条消息（删除中断后的空消息等） */
   removeMessage: (sessionId: string, messageId: string) => void;
+  /** 回滚到某条消息之前（删除该消息及之后所有消息），用于编辑/重新生成 */
+  rollbackMessages: (sessionId: string, messageId: string) => void;
   updateStreamingContent: (sessionId: string, delta: string) => void;
   /** 设置 streaming 消息（占位，供 addNode/appendNodeDelta 使用） */
   setStreaming: (sessionId: string, message: ChatMessage) => void;
@@ -153,6 +155,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         messagesBySession: {
           ...state.messagesBySession,
           [sessionId]: existing.filter((m) => m.id !== messageId),
+        },
+      };
+    }),
+
+  rollbackMessages: (sessionId, messageId) =>
+    set((state) => {
+      const existing = state.messagesBySession[sessionId] ?? [];
+      const idx = existing.findIndex((m) => m.id === messageId);
+      if (idx === -1) return state;
+      return {
+        messagesBySession: {
+          ...state.messagesBySession,
+          [sessionId]: existing.slice(0, idx),
         },
       };
     }),

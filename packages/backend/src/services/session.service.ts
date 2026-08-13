@@ -107,6 +107,26 @@ export class SessionService {
   }
 
   /**
+   * 删除某条消息之后的所有消息（含该消息本身）
+   * 用于"编辑消息"和"重新生成"场景：回滚到指定位置，后续内容全部清除。
+   */
+  async deleteMessagesFrom(messageId: string, tenantId: string): Promise<number> {
+    const [msg] = await this.prisma.message.findMany({
+      where: { id: messageId },
+      select: { sessionId: true, createdAt: true, session: { select: { tenantId: true } } },
+      take: 1,
+    });
+    if (!msg || msg.session.tenantId !== tenantId) return 0;
+    const result = await this.prisma.message.deleteMany({
+      where: {
+        sessionId: msg.sessionId,
+        createdAt: { gte: msg.createdAt },
+      },
+    });
+    return result.count;
+  }
+
+  /**
    * 重命名会话（租户隔离）
    */
   async renameSession(sessionId: string, tenantId: string, title: string) {

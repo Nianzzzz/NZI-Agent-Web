@@ -77,6 +77,10 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/messages/:id",
     async (req, reply) => controller.deleteMessage(req as never, reply as never),
   );
+  fastify.delete<{ Params: { id: string } }>(
+    "/api/messages/:id/after",
+    async (req, reply) => controller.deleteMessagesFrom(req as never, reply as never),
+  );
   fastify.get<{ Params: { id: string } }>(
     "/api/sessions/:id/messages",
     async (req, reply) => controller.getMessages(req as never, reply as never),

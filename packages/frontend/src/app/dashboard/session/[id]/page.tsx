@@ -17,14 +17,14 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Bot, Cpu, Send, Square, Loader2,
   Sparkles, AlertCircle, CheckCircle2, MessageSquare, User as UserIcon, Brain,
-  ChevronDown, ChevronRight, Copy, Check, Trash2,
+  ChevronDown, ChevronRight, Copy, Check, Trash2, Pencil, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuthStore } from "@/lib/auth-store";
 import { useChatSocket } from "@/hooks/use-chat-socket";
 import { useChatStore, type ChatMessage } from "@/stores/chat.store";
-import { fetchSessionDetail, fetchSessionMessages, deleteMessage, type SessionDetail } from "@/lib/chat-api";
+import { fetchSessionDetail, fetchSessionMessages, deleteMessage, deleteMessagesFrom, type SessionDetail } from "@/lib/chat-api";
 import AgentTimeline from "@/components/chat/AgentTimeline";
 import Markdown from "@/components/chat/Markdown";
 import { cn } from "@/lib/utils";
@@ -72,16 +72,37 @@ function ReasoningBox({ nodes }: {
 
 // ─── 消息气泡 ─────────────────────────────────────────────────────
 
-function MessageBubble({ message, engineGradient, onRemove, buffering }: {
+function MessageBubble({ message, engineGradient, onRemove, buffering, onEdit, onRegenerate }: {
   message: ChatMessage;
   engineGradient: string;
   onRemove?: (messageId: string) => void;
   buffering?: boolean;
+  onEdit?: (messageId: string, newText: string) => void;
+  onRegenerate?: (messageId: string) => void;
 }) {
   const isUser = message.role === "user";
   const isStreaming = message.status === "streaming";
   const hasNodes = !isUser && message.nodes && message.nodes.length > 0;
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(message.content);
+  const editInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (editing) editInputRef.current?.focus();
+  }, [editing]);
+
+  const handleSaveEdit = () => {
+    const text = editText.trim();
+    if (!text || !onEdit) { setEditing(false); setEditText(message.content); return; }
+    onEdit(message.id, text);
+    setEditing(false);
+  };
+
+  const handleCancelEdit = () => {
+    setEditing(false);
+    setEditText(message.content);
+  };
 
   const handleCopy = async () => {
     try {
@@ -158,9 +179,42 @@ function MessageBubble({ message, engineGradient, onRemove, buffering }: {
               )}
             </>
           ) : (
-            <div className="whitespace-pre-wrap break-words">
-              {message.content}
-            </div>
+            editing && onEdit ? (
+              <div className="space-y-2">
+                <textarea
+                  ref={editInputRef}
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveEdit(); }
+                    if (e.key === "Escape") { e.preventDefault(); handleCancelEdit(); }
+                  }}
+                  rows={3}
+                  className="w-full resize-y rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm text-foreground outline-none ring-2 ring-blue-500/20 dark:bg-slate-900"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveEdit}
+                    className="rounded-full bg-blue-500 px-3 py-1 text-[10px] font-semibold text-white hover:bg-blue-600"
+                  >
+                    确认
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="rounded-full border border-slate-200 px-3 py-1 text-[10px] text-slate-500 hover:bg-slate-50 dark:border-slate-700"
+                  >
+                    取消
+                  </button>
+                  <span className="text-[10px] text-slate-400">Enter 确认 · Esc 取消</span>
+                </div>
+              </div>
+            ) : (
+              <div className="whitespace-pre-wrap break-words">
+                {message.content}
+              </div>
+            )
           )}
         </div>
 
@@ -174,6 +228,32 @@ function MessageBubble({ message, engineGradient, onRemove, buffering }: {
           >
             {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
             {copied ? "已复制" : "复制"}
+          </button>
+        )}
+
+        {/* ── 编辑按钮（用户消息） ── */}
+        {isUser && onEdit && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="absolute -right-2 top-2 z-10 flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 opacity-0 shadow-sm transition-all group-hover:opacity-100 hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+            title="编辑消息"
+          >
+            <Pencil className="h-3 w-3" />
+            编辑
+          </button>
+        )}
+
+        {/* ── 重新生成按钮（最后一条 assistant 答案） ── */}
+        {!isUser && onRegenerate && message.status === "completed" && (
+          <button
+            type="button"
+            onClick={() => onRegenerate(message.id)}
+            className="absolute -right-2 top-8 z-10 flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 opacity-0 shadow-sm transition-all group-hover:opacity-100 hover:border-violet-300 hover:text-violet-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+            title="重新生成"
+          >
+            <RefreshCw className="h-3 w-3" />
+            重生成
           </button>
         )}
 
@@ -321,6 +401,7 @@ export default function SessionChatPage() {
 
   const replaceMessages = useChatStore((s) => s.replaceMessages);
   const removeMessage = useChatStore((s) => s.removeMessage);
+  const rollbackMessages = useChatStore((s) => s.rollbackMessages);
 
   // 移除消息：先乐观更新 store，再调用后端 API
   const handleRemoveMessage = useCallback(
@@ -335,7 +416,7 @@ export default function SessionChatPage() {
     [sessionId, removeMessage],
   );
 
-  // 滚动到最后一个用户问题（让用户一进来先看到自己提的问题，再往下看答案）
+  // ─── 加载 session 详情 + 历史消息 ───────────────────────────
   const scrollToLastUserMessage = useCallback((userMsgIds: string[]) => {
     const el = scrollContainerRef.current;
     if (!el || userMsgIds.length === 0) {
@@ -426,6 +507,36 @@ export default function SessionChatPage() {
     if (streamingMessage) list.push(streamingMessage);
     return list.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   }, [messages, streamingMessage]);
+
+  // 编辑消息：回滚到该消息处（删除该消息及之后所有消息），更新内容，重新发送
+  const handleEditMessage = useCallback(
+    async (messageId: string, newText: string) => {
+      rollbackMessages(sessionId, messageId);
+      try {
+        await deleteMessagesFrom(messageId);
+      } catch { /* ignore */ }
+      sendChat(newText, currentEngine, thinkingLevel);
+    },
+    [sessionId, rollbackMessages, sendChat, currentEngine, thinkingLevel],
+  );
+
+  // 重新生成：回滚到上一条用户消息（删除最后一条 assistant 消息），重新发送
+  const handleRegenerate = useCallback(
+    async (messageId: string) => {
+      const idx = renderedMessages.findIndex((m) => m.id === messageId);
+      if (idx <= 0) return;
+      let userIdx = idx - 1;
+      while (userIdx >= 0 && renderedMessages[userIdx].role !== "user") userIdx--;
+      if (userIdx < 0) return;
+      const userMsg = renderedMessages[userIdx];
+      rollbackMessages(sessionId, userMsg.id);
+      try {
+        await deleteMessagesFrom(userMsg.id);
+      } catch { /* ignore */ }
+      sendChat(userMsg.content, currentEngine, thinkingLevel);
+    },
+    [sessionId, rollbackMessages, sendChat, currentEngine, thinkingLevel, renderedMessages],
+  );
 
   // ─── 智能滚动 ───────────────────────────────────────────────
   // 用户滚动时更新状态：主动上滑 = 用户离开了底部
@@ -658,6 +769,12 @@ export default function SessionChatPage() {
                   engineGradient={meta.gradient}
                   onRemove={handleRemoveMessage}
                   buffering={buffering}
+                  onEdit={isUserMessage(m) ? handleEditMessage : undefined}
+                  onRegenerate={
+                    !isUserMessage(m) && m.status === "completed" && m === renderedMessages[renderedMessages.length - 1]
+                      ? handleRegenerate
+                      : undefined
+                  }
                 />
               </div>
             ))
