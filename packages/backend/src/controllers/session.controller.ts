@@ -90,6 +90,19 @@ export class SessionController {
   }
 
   /**
+   * DELETE /api/messages/:id/turn
+   * 删除完整的对话轮次（user 消息 + 对应的 assistant 消息）
+   * 用于"移除"整轮对话，刷新后不会回来
+   */
+  async deleteTurn(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+    const user = req.user as TokenPayload | undefined;
+    if (!user) return reply.status(401).send({ error: "未登录或登录已过期" });
+    const count = await this.sessionService.deleteTurn(req.params.id, user.tenantId);
+    if (count === 0) return reply.status(404).send({ error: "消息不存在或无权限" });
+    return reply.send({ deletedCount: count });
+  }
+
+  /**
    * PATCH /api/sessions/:id
    * 重命名会话
    */

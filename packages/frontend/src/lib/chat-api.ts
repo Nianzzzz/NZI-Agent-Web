@@ -55,6 +55,18 @@ export async function deleteMessage(id: string): Promise<void> {
   if (!res.ok) throw new Error(`Failed to delete message: ${res.status}`);
 }
 
+/** 删除完整的对话轮次（user + assistant），刷新后不会回来 */
+export async function deleteTurn(id: string): Promise<number> {
+  const res = await fetch(`${API_BASE}/api/messages/${id}/turn`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+  });
+  if (res.status === 404) throw new Error("消息不存在或无权限");
+  if (!res.ok) throw new Error(`Failed to delete turn: ${res.status}`);
+  const { deletedCount } = (await res.json()) as { deletedCount: number };
+  return deletedCount;
+}
+
 /** 删除某条消息之后的所有消息（含该消息本身），用于编辑/重新生成 */
 export async function deleteMessagesFrom(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/api/messages/${id}/after`, {

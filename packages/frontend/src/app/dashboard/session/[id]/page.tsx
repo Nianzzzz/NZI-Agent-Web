@@ -25,7 +25,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useAuthStore } from "@/lib/auth-store";
 import { useChatSocket } from "@/hooks/use-chat-socket";
 import { useChatStore, type ChatMessage } from "@/stores/chat.store";
-import { fetchSessionDetail, fetchSessionMessages, deleteMessage, deleteMessagesFrom, uploadFile, type SessionDetail } from "@/lib/chat-api";
+import { fetchSessionDetail, fetchSessionMessages, deleteMessage, deleteTurn, deleteMessagesFrom, uploadFile, type SessionDetail } from "@/lib/chat-api";
 import AgentTimeline from "@/components/chat/AgentTimeline";
 import Markdown from "@/components/chat/Markdown";
 import { cn } from "@/lib/utils";
@@ -228,56 +228,58 @@ function MessageBubble({ message, engineGradient, onRemove, buffering, onEdit, o
           )}
         </div>
 
-        {/* ── 复制按钮（仅 assistant 答案） ── */}
-        {!isUser && message.content && message.status === "completed" && (
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="absolute -right-2 top-2 z-10 flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 opacity-0 shadow-sm transition-all group-hover:opacity-100 hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-            title="复制内容"
-          >
-            {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-            {copied ? "已复制" : "复制"}
-          </button>
-        )}
-
-        {/* ── 编辑按钮（用户消息） ── */}
-        {isUser && onEdit && (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="absolute -right-2 top-2 z-10 flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 opacity-0 shadow-sm transition-all group-hover:opacity-100 hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
-            title="编辑消息"
-          >
-            <Pencil className="h-3 w-3" />
-            编辑
-          </button>
-        )}
-
-        {/* ── 重新生成按钮（最后一条 assistant 答案） ── */}
-        {!isUser && onRegenerate && message.status === "completed" && (
-          <button
-            type="button"
-            onClick={() => onRegenerate(message.id)}
-            className="absolute -right-2 top-8 z-10 flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 opacity-0 shadow-sm transition-all group-hover:opacity-100 hover:border-violet-300 hover:text-violet-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
-            title="重新生成"
-          >
-            <RefreshCw className="h-3 w-3" />
-            重生成
-          </button>
-        )}
-
-        {/* ── 移除按钮（所有消息均可移除） ── */}
-        {onRemove && (
-          <button
-            type="button"
-            onClick={() => onRemove(message.id)}
-            className="absolute -right-2 top-2 z-10 flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700 opacity-0 shadow-sm transition-all group-hover:opacity-100 hover:border-amber-300 hover:text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
-            title="移除此消息"
-          >
-            <Trash2 className="h-3 w-3" />
-            移除
-          </button>
+        {/* ── 消息操作按钮组（hover 时显示在消息右上角） ── */}
+        {(onRemove || onEdit || (!isUser && onRegenerate)) && (
+          <div className="absolute -right-2 top-0 z-10 flex flex-col gap-1.5 opacity-0 transition-all group-hover:opacity-100">
+            {/* 复制按钮（仅 assistant 完整答案） */}
+            {!isUser && message.content && message.status === "completed" && (
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                title="复制内容"
+              >
+                {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                {copied ? "已复制" : "复制"}
+              </button>
+            )}
+            {/* 编辑按钮（用户消息） */}
+            {isUser && onEdit && (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 shadow-sm transition-all hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                title="编辑消息"
+              >
+                <Pencil className="h-3 w-3" />
+                编辑
+              </button>
+            )}
+            {/* 重新生成按钮（最后一条 assistant 答案） */}
+            {!isUser && onRegenerate && message.status === "completed" && (
+              <button
+                type="button"
+                onClick={() => onRegenerate(message.id)}
+                className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 shadow-sm transition-all hover:border-violet-300 hover:text-violet-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                title="重新生成"
+              >
+                <RefreshCw className="h-3 w-3" />
+                重生成
+              </button>
+            )}
+            {/* 移除按钮（所有消息均可移除） */}
+            {onRemove && (
+              <button
+                type="button"
+                onClick={() => onRemove(message.id)}
+                className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700 shadow-sm transition-all hover:border-amber-300 hover:text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                title="移除整轮对话"
+              >
+                <Trash2 className="h-3 w-3" />
+                移除
+              </button>
+            )}
+          </div>
         )}
 
         {/* ── 状态信息 ── */}
@@ -417,17 +419,39 @@ export default function SessionChatPage() {
   const removeMessage = useChatStore((s) => s.removeMessage);
   const rollbackMessages = useChatStore((s) => s.rollbackMessages);
 
-  // 移除消息：先乐观更新 store，再调用后端 API
+  const {
+    connectionStatus,
+    connectionError,
+    messages,
+    streamingMessage,
+    isGenerating,
+    buffering,
+    sendChat,
+    stopGeneration,
+  } = useChatSocket({ sessionId, token, autoConnect: true });
+
+  // 移除消息：删除整轮对话（user + assistant），先乐观更新 store，再调用后端 API
   const handleRemoveMessage = useCallback(
     async (messageId: string) => {
-      removeMessage(sessionId, messageId);
+      // 乐观：从 store 移除整轮（该消息 + 配对的 assistant/user）
+      const idx = messages.findIndex((m) => m.id === messageId);
+      if (idx >= 0) {
+        const target = messages[idx];
+        const toRemove = new Set<string>([messageId]);
+        if (target.role === "user" && idx + 1 < messages.length && messages[idx + 1].role === "assistant") {
+          toRemove.add(messages[idx + 1].id);
+        } else if (target.role === "assistant" && idx > 0 && messages[idx - 1].role === "user") {
+          toRemove.add(messages[idx - 1].id);
+        }
+        toRemove.forEach((id) => removeMessage(sessionId, id));
+      }
       try {
-        await deleteMessage(messageId);
+        await deleteTurn(messageId);
       } catch {
         // 删除失败时不影响已有 UI（消息已从列表中移除）
       }
     },
-    [sessionId, removeMessage],
+    [sessionId, removeMessage, messages],
   );
 
   // ─── 加载 session 详情 + 历史消息 ───────────────────────────
@@ -445,17 +469,6 @@ export default function SessionChatPage() {
       messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
     }
   }, []);
-
-  const {
-    connectionStatus,
-    connectionError,
-    messages,
-    streamingMessage,
-    isGenerating,
-    buffering,
-    sendChat,
-    stopGeneration,
-  } = useChatSocket({ sessionId, token, autoConnect: true });
 
   // ─── 加载 session 详情 + 历史消息 ───────────────────────────
   useEffect(() => {

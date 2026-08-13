@@ -107,6 +107,56 @@ export class SessionService {
   }
 
   /**
+   * 删除完整的对话轮次（user 消息 + 对应的 assistant 消息）
+   *
+   * 语义：移除"这一轮对话"。找到 messageId 所在的那一轮（相邻的 user+assistant 配对），
+   * 将该轮所有消息全部删除。这样刷新后该轮对话完整消失，不会留下孤儿消息。
+   *
+   * 配对规则：按 createdAt 排序后，每个 USER 消息与其后紧邻的 ASSISTANT 消息组成一轮。
+   */
+  async deleteTurn(messageId: string, tenantId: string): Promise<number> {
+    const [msg] = await this.prisma.message.findMany({
+      where: { id: messageId },
+      select: { sessionId: true, createdAt: true, role: true, session: { select: { tenantId: true } } },
+      take: 1,
+    });
+    if (!msg || msg.session.tenantId !== tenantId) return 0;
+
+    // 取该 session 所有消息（按时间正序），找出 messageId 所属的 turn 范围
+    const all = await this.prisma.message.findMany({
+      where: { sessionId: msg.sessionId },
+      select: { id: true, role: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const idx = all.findIndex((m) => m.id === messageId);
+    if (idx === -1) return 0;
+
+    // 确定该 turn 的第一条消息索引（user 消息）
+    let turnStart = idx;
+    if (msg.role === 'ASSISTANT' && idx > 0 && all[idx - 1].role === 'USER') {
+      turnStart = idx - 1;
+    }
+
+    // 确定该 turn 的最后一条消息索引（assistant 消息，若存在）
+    let turnEnd = turnStart + 1;
+    if (turnEnd < all.length && all[turnEnd].role === 'ASSISTANT') {
+      // 可能有 TOOL_RESULT 夹在中间，一并纳入
+      turnEnd++;
+      while (turnEnd < all.length && all[turnEnd].role === 'TOOL_RESULT') turnEnd++;
+      if (turnEnd < all.length && all[turnEnd].role === 'ASSISTANT') turnEnd++;
+    }
+
+    const turnIds = all.slice(turnStart, turnEnd).map((m) => m.id);
+    if (turnIds.length === 0) return 0;
+
+    const result = await this.prisma.message.deleteMany({
+      where: { id: { in: turnIds } },
+    });
+    return result.count;
+  }
+
+  /**
    * 删除某条消息之后的所有消息（含该消息本身）
    * 用于"编辑消息"和"重新生成"场景：回滚到指定位置，后续内容全部清除。
    */
