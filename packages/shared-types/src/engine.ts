@@ -79,6 +79,8 @@ export interface PromptContext {
   systemPrompt?: string;
   /** 允许的工具列表 */
   allowedTools?: string[];
+  /** 工作目录（工具执行时的 cwd，默认 process.cwd()） */
+  workingDirectory?: string;
 }
 
 /** 多轮对话消息（OpenAI 格式，供 BailianAdapter 等使用） */
