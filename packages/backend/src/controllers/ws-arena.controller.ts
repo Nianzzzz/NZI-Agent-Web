@@ -98,8 +98,8 @@ export class WsArenaController {
 
     this.arenaService.registerRequest(matchId, side, { abortController, texts });
 
-    // 写入用户提问到该 side 的会话
-    this.arenaService.getMatch(matchId).then((m) => {
+    // 写入用户提问到 Arena 会话（不带 arenaSide，作为公共 prompt）
+    const matchPrompt = this.arenaService.getMatch(matchId).then((m) => {
       void this.sessionService.createMessage({
         sessionId: sideInfo.sessionId,
         role: "USER",
@@ -264,6 +264,7 @@ export class WsArenaController {
               status: "COMPLETED",
               latencyMs: Date.now() - startTime,
               timelineNodes: finalNodes,
+              arenaSide: side, // A=PI, B=GROK
             });
             this.sendSocket(socket, {
               type: "done",

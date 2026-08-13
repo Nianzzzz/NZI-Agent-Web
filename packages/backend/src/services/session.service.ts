@@ -27,6 +27,8 @@ export interface CreateMessageInput {
   status?: "COMPLETED" | "INTERRUPTED";
   /** T010: Agent Loop Timeline 节点（thinking/tool/answer 的完整事件流），落库后用于历史回放 */
   timelineNodes?: unknown;
+  /** Arena 对战侧标识（A=PI, B=GROK），仅 Arena 会话的消息有此值 */
+  arenaSide?: string;
 }
 
 export class SessionService {
@@ -240,6 +242,7 @@ export class SessionService {
         rootEventId: input.rootEventId ?? null,
         status: input.status ?? "COMPLETED",
         timelineNodes: input.timelineNodes as never,
+        arenaSide: input.arenaSide ?? null,
       },
     });
   }

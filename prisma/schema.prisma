@@ -111,6 +111,8 @@ model Session {
   rootNodeId      String?
   summary         String?
   metadata        Json?
+  /** 关联的 Arena 对战 ID（仅 Arena 会话有此值） */
+  arenaMatchId    String?       @unique
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -121,6 +123,7 @@ model Session {
   @@index([tenantId, createdAt])
   @@index([userId, createdAt])
   @@index([parentSessionId])
+  @@index([arenaMatchId])
   @@map("sessions")
 }
 
@@ -146,6 +149,8 @@ model Message {
   latencyMs    Int?
   status       MessageStatus @default(COMPLETED)
   timelineNodes Json?
+  /** Arena 对战侧标识（A=PI, B=GROK），仅 Arena 会话的消息有此值 */
+  arenaSide    String?
   createdAt    DateTime      @default(now())
 
   @@index([sessionId, createdAt])

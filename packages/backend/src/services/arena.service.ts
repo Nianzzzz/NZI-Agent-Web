@@ -4,9 +4,10 @@
  * 职责：管理 Arena 对战（双引擎并行生成 + 投票统计），持久化到 PostgreSQL
  *
  * 设计：
- * - 每场对战（ArenaMatch）通过 Prisma 持久化，包含两个 side（A=PI, B=GROK）
- * - 每个 side 独立流式生成，事件通过 sideChannel (WebSocket) 推送
+ * - 每场对战（ArenaMatch）对应一个独立的 Arena 会话（Session.arenaMatchId 关联）
+ * - 两个 side（A=PI, B=GROK）的消息都写入同一个会话，通过 Message.arenaSide 区分
  * - 投票结果通过 ArenaVote 表持久化
+ * - 多轮对话：每轮追加新的 A/B 消息对到同一会话
  */
 
 import type { EngineProvider } from "@nzi/shared-types";
@@ -17,7 +18,7 @@ import type { TokenPayload } from "../config/auth.config.js";
 export interface ArenaSide {
   provider: EngineProvider;
   label: "A" | "B";
-  /** 该 side 的 sessionId（独立会话，用于隔离消息历史） */
+  /** 两个 side 共享同一个 sessionId */
   sessionId: string;
 }
 
@@ -49,27 +50,19 @@ export class ArenaService {
     private prisma: PrismaClient,
   ) {}
 
-  /** 创建一场新的 Arena 对战 */
+  /** 创建一场新的 Arena 对战 — 创建一个专属 Arena 会话 */
   async createMatch(
     user: TokenPayload,
     prompt: string,
     thinkingLevel: "off" | "low" | "medium" | "high",
   ): Promise<ArenaMatch> {
-    // 为两个 side 各创建一个独立会话（隔离消息历史）
-    const [sessionA, sessionB] = await Promise.all([
-      this.sessionService.createSession({
-        tenantId: user.tenantId,
-        userId: user.sub,
-        title: `Arena: ${prompt.slice(0, 30)}`,
-        engine: "PI",
-      }),
-      this.sessionService.createSession({
-        tenantId: user.tenantId,
-        userId: user.sub,
-        title: `Arena: ${prompt.slice(0, 30)}`,
-        engine: "GROK",
-      }),
-    ]);
+    // 创建一个专属 Arena 会话（两个 side 共享）
+    const session = await this.sessionService.createSession({
+      tenantId: user.tenantId,
+      userId: user.sub,
+      title: `⚔️ Arena: ${prompt.slice(0, 30)}`,
+      engine: "PI", // 默认，实际是两个引擎并行
+    });
 
     const thinkingLevelEnum = this._toDbThinkingLevel(thinkingLevel);
 
@@ -84,6 +77,12 @@ export class ArenaService {
       },
     });
 
+    // 将 session 与 match 关联
+    await this.prisma.session.update({
+      where: { id: session.id },
+      data: { arenaMatchId: dbMatch.id },
+    });
+
     const match: ArenaMatch = {
       id: dbMatch.id,
       tenantId: user.tenantId,
@@ -91,8 +90,8 @@ export class ArenaService {
       prompt: prompt.trim(),
       thinkingLevel,
       sides: [
-        { provider: "PI" as EngineProvider, label: "A", sessionId: sessionA.id },
-        { provider: "GROK" as EngineProvider, label: "B", sessionId: sessionB.id },
+        { provider: "PI" as EngineProvider, label: "A", sessionId: session.id },
+        { provider: "GROK" as EngineProvider, label: "B", sessionId: session.id },
       ],
       status: "running",
       createdAt: dbMatch.createdAt.getTime(),
@@ -110,18 +109,12 @@ export class ArenaService {
     });
     if (!dbMatch) return null;
 
-    // 通过关联的 session 反查两个 side
-    const sessions = await this.prisma.session.findMany({
-      where: {
-        tenantId: dbMatch.tenantId,
-        title: { startsWith: "Arena: " },
-        createdAt: { gte: dbMatch.createdAt },
-      },
-      orderBy: { createdAt: "asc" },
-      take: 2,
+    // 找到关联的 Arena 会话
+    const arenaSession = await this.prisma.session.findFirst({
+      where: { arenaMatchId: id },
+      select: { id: true, engine: true },
     });
-
-    const sides: [ArenaSide, ArenaSide] = this._reconstructSides(sessions, dbMatch.createdAt);
+    if (!arenaSession) return null;
 
     return {
       id: dbMatch.id,
@@ -129,14 +122,17 @@ export class ArenaService {
       userId: dbMatch.userId,
       prompt: dbMatch.prompt,
       thinkingLevel: this._fromDbThinkingLevel(dbMatch.thinkingLevel),
-      sides,
+      sides: [
+        { provider: "PI" as EngineProvider, label: "A", sessionId: arenaSession.id },
+        { provider: "GROK" as EngineProvider, label: "B", sessionId: arenaSession.id },
+      ],
       status: dbMatch.status === "RUNNING" ? "running" : "completed",
       createdAt: dbMatch.createdAt.getTime(),
       completedAt: dbMatch.completedAt?.getTime(),
       votes: {
         A: dbMatch.votes.filter((v) => v.provider === "PI").length,
         B: dbMatch.votes.filter((v) => v.provider === "GROK").length,
-        tie: 0, // tie 投票暂不持久化（schema 只支持按 provider 投票）
+        tie: 0,
       },
     };
   }
@@ -151,17 +147,10 @@ export class ArenaService {
 
     return Promise.all(
       dbMatches.map(async (dbMatch) => {
-        const sessions = await this.prisma.session.findMany({
-          where: {
-            tenantId: dbMatch.tenantId,
-            title: { startsWith: "Arena: " },
-            createdAt: { gte: dbMatch.createdAt },
-          },
-          orderBy: { createdAt: "asc" },
-          take: 2,
+        const arenaSession = await this.prisma.session.findFirst({
+          where: { arenaMatchId: dbMatch.id },
+          select: { id: true },
         });
-
-        const sides: [ArenaSide, ArenaSide] = this._reconstructSides(sessions, dbMatch.createdAt);
 
         return {
           id: dbMatch.id,
@@ -169,7 +158,10 @@ export class ArenaService {
           userId: dbMatch.userId,
           prompt: dbMatch.prompt,
           thinkingLevel: this._fromDbThinkingLevel(dbMatch.thinkingLevel),
-          sides,
+          sides: [
+            { provider: "PI" as EngineProvider, label: "A", sessionId: arenaSession?.id ?? "" },
+            { provider: "GROK" as EngineProvider, label: "B", sessionId: arenaSession?.id ?? "" },
+          ],
           status: dbMatch.status === "RUNNING" ? "running" : "completed",
           createdAt: dbMatch.createdAt.getTime(),
           completedAt: dbMatch.completedAt?.getTime(),
@@ -217,8 +209,6 @@ export class ArenaService {
     if (!dbMatch || dbMatch.tenantId !== tenantId) return false;
     if (dbMatch.status !== "COMPLETED") return false;
 
-    // 对于 tie 投票，不写入 provider 关联（schema 中 provider 是必填的 EngineProvider）
-    // 实际业务中 tie 表示两个都好，不需要持久化到具体引擎
     if (winner === "A") {
       await this.prisma.arenaVote.create({
         data: { matchId, provider: "PI" },
@@ -228,7 +218,7 @@ export class ArenaService {
         data: { matchId, provider: "GROK" },
       });
     }
-    // tie: 不创建 vote 记录，但投票操作本身仍然有效
+    // tie: 不创建 vote 记录
     return true;
   }
 
@@ -255,18 +245,5 @@ export class ArenaService {
       OFF: "off", LOW: "low", MEDIUM: "medium", HIGH: "high",
     };
     return level ? (map[level] ?? "off") : "off";
-  }
-
-  /** 从 DB session 重构 ArenaSide */
-  private _reconstructSides(
-    sessions: Array<{ id: string; engine: string }>,
-    matchCreatedAt: Date,
-  ): [ArenaSide, ArenaSide] {
-    const pi = sessions.find((s) => s.engine === "PI");
-    const grok = sessions.find((s) => s.engine === "GROK");
-    return [
-      { provider: "PI" as EngineProvider, label: "A", sessionId: pi?.id ?? "" },
-      { provider: "GROK" as EngineProvider, label: "B", sessionId: grok?.id ?? "" },
-    ];
   }
 }
