@@ -222,13 +222,13 @@ export class WsChatController {
   private async handleChat(
     socket: WebSocket,
     user: TokenPayload,
-    payload: { sessionId: string; agentType?: "PI" | "GROK"; prompt: string; thinkingLevel?: "off" | "low" | "medium" | "high" },
+    payload: { sessionId: string; agentType?: "PI" | "GROK"; prompt: string; thinkingLevel?: "off" | "low" | "medium" | "high"; workingDirectory?: string },
     activeRequests: Map<
       string,
       RequestContext & { sessionId: string; rootEventId?: string; provider: EngineProvider }
     >,
   ) {
-    const { sessionId, prompt, agentType = "PI", thinkingLevel = "off" } = payload;
+    const { sessionId, prompt, agentType = "PI", thinkingLevel = "off", workingDirectory } = payload;
     const provider = EngineProvider[agentType as keyof typeof EngineProvider] ?? EngineProvider.PI;
 
     // 唯一请求 ID，前端 stop 时传入此 ID 中断
@@ -294,6 +294,7 @@ export class WsChatController {
         requestId,
         context: {
           thinkingLevel: thinkingLevel as "off" | "low" | "medium" | "high",
+          ...(workingDirectory ? { workingDirectory } : {}),
         },
         messages: historyMessages,
       } as never);

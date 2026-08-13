@@ -77,3 +77,28 @@ export async function fetchSessionMessages(
   const { messages } = (await res.json()) as { messages: HistoryMessage[] };
   return messages;
 }
+
+/** 上传文件到服务端临时目录，返回文件路径信息 */
+export interface UploadedFile {
+  filePath: string;
+  filename: string;
+  size: number;
+  mimeType: string;
+}
+
+export async function uploadFile(
+  sessionId: string,
+  file: File,
+): Promise<UploadedFile> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(
+    `${API_BASE}/api/files/upload?sessionId=${encodeURIComponent(sessionId)}`,
+    { method: "POST", headers: authHeaders(), body: formData },
+  );
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`上传失败 (${res.status}): ${body}`);
+  }
+  return res.json() as Promise<UploadedFile>;
+}

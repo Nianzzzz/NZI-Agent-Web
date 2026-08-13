@@ -11,6 +11,7 @@ import { AuthController } from "../controllers/auth.controller.js";
 import { SessionController } from "../controllers/session.controller.js";
 import { ArenaController } from "../controllers/arena.controller.js";
 import { EngineConfigController } from "../controllers/engine-config.controller.js";
+import { FileController } from "../controllers/file.controller.js";
 import { AuthService } from "../services/auth.service.js";
 import { SessionService } from "../services/session.service.js";
 import { ArenaService } from "../services/arena.service.js";
@@ -84,6 +85,13 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get<{ Params: { id: string } }>(
     "/api/sessions/:id/messages",
     async (req, reply) => controller.getMessages(req as never, reply as never),
+  );
+
+  // ── 文件上传 ──────────────────────────────────────────────
+  const fileController = new FileController();
+  fastify.post<{ Querystring: { sessionId: string } }>(
+    "/api/files/upload",
+    async (req, reply) => fileController.upload(req as never, reply as never),
   );
 };
 

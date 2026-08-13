@@ -19,6 +19,8 @@ export interface ChatMessagePayload {
   prompt: string;
   /** 思维链级别（默认 "off"） */
   thinkingLevel?: "off" | "low" | "medium" | "high";
+  /** 工具执行的工作目录（绝对路径），影响 read_file / run_shell 等工具的 cwd */
+  workingDirectory?: string;
 }
 
 /** 客户端 -> 服务端：停止生成 */
@@ -150,6 +152,7 @@ export const ChatPayloadSchema = z.object({
     .enum(["off", "low", "medium", "high"])
     .optional()
     .default("off"),
+  workingDirectory: z.string().optional(),
 });
 
 /** 入站 stop 消息 payload */

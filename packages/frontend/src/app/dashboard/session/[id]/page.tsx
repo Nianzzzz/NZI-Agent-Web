@@ -18,13 +18,14 @@ import {
   ArrowLeft, Bot, Cpu, Send, Square, Loader2,
   Sparkles, AlertCircle, CheckCircle2, MessageSquare, User as UserIcon, Brain,
   ChevronDown, ChevronRight, Copy, Check, Trash2, Pencil, RefreshCw,
+  Paperclip, FolderOpen, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuthStore } from "@/lib/auth-store";
 import { useChatSocket } from "@/hooks/use-chat-socket";
 import { useChatStore, type ChatMessage } from "@/stores/chat.store";
-import { fetchSessionDetail, fetchSessionMessages, deleteMessage, deleteMessagesFrom, type SessionDetail } from "@/lib/chat-api";
+import { fetchSessionDetail, fetchSessionMessages, deleteMessage, deleteMessagesFrom, uploadFile, type SessionDetail } from "@/lib/chat-api";
 import AgentTimeline from "@/components/chat/AgentTimeline";
 import Markdown from "@/components/chat/Markdown";
 import { cn } from "@/lib/utils";
@@ -50,6 +51,15 @@ function isAssistantAnswer(m: ChatMessage): boolean {
 /** 判断消息是否是用户提问 */
 function isUserMessage(m: ChatMessage): boolean {
   return m.role === "user";
+}
+
+/** 格式化字节数为可读字符串 */
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
 // ─── 推理过程方框（外层容器 + 内部滚动，折叠由 AgentTimeline 负责）────
@@ -390,6 +400,10 @@ export default function SessionChatPage() {
   const [draft, setDraft] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState<"off" | "low" | "medium" | "high">("off");
   const [currentEngine, setCurrentEngine] = useState<"PI" | "GROK">("PI");
+  const [workingDirectory, setWorkingDirectory] = useState("");
+  const [attachments, setAttachments] = useState<Array<{ file: File; url: string }>>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -515,9 +529,9 @@ export default function SessionChatPage() {
       try {
         await deleteMessagesFrom(messageId);
       } catch { /* ignore */ }
-      sendChat(newText, currentEngine, thinkingLevel);
+      sendChat(newText, currentEngine, thinkingLevel, workingDirectory || undefined);
     },
-    [sessionId, rollbackMessages, sendChat, currentEngine, thinkingLevel],
+    [sessionId, rollbackMessages, sendChat, currentEngine, thinkingLevel, workingDirectory],
   );
 
   // 重新生成：回滚到上一条用户消息（删除最后一条 assistant 消息），重新发送
@@ -533,9 +547,9 @@ export default function SessionChatPage() {
       try {
         await deleteMessagesFrom(userMsg.id);
       } catch { /* ignore */ }
-      sendChat(userMsg.content, currentEngine, thinkingLevel);
+      sendChat(userMsg.content, currentEngine, thinkingLevel, workingDirectory || undefined);
     },
-    [sessionId, rollbackMessages, sendChat, currentEngine, thinkingLevel, renderedMessages],
+    [sessionId, rollbackMessages, sendChat, currentEngine, thinkingLevel, renderedMessages, workingDirectory],
   );
 
   // ─── 智能滚动 ───────────────────────────────────────────────
@@ -609,12 +623,43 @@ export default function SessionChatPage() {
   }, []);
 
   // ─── 发送消息 ────────────────────────────────────────────
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const text = draft.trim();
-    if (!text || isGenerating) return;
-    sendChat(text, currentEngine, thinkingLevel);
+    if (!text && attachments.length === 0) return;
+    if (isGenerating) return;
+
+    let prompt = text;
+
+    // 上传附件到服务端，将文件路径追加到 prompt 中告知模型
+    if (attachments.length > 0) {
+      setUploading(true);
+      try {
+        const uploadedPaths: string[] = [];
+        for (const a of attachments) {
+          try {
+            const result = await uploadFile(sessionId, a.file);
+            uploadedPaths.push(result.filePath);
+          } catch (err) {
+            // 单个文件上传失败不阻断发送，记录到 prompt 中
+            uploadedPaths.push(`[上传失败: ${a.file.name}]`);
+          }
+        }
+        const filesNote = uploadedPaths.map((p, i) => {
+          const name = attachments[i]?.file.name ?? p;
+          return `${name} → ${p}`;
+        }).join("; ");
+        prompt += `\n\n[已附加文件: ${filesNote}]`;
+      } finally {
+        setUploading(false);
+      }
+    }
+
+    sendChat(prompt, currentEngine, thinkingLevel, workingDirectory || undefined);
     setDraft("");
-  }, [draft, isGenerating, sendChat, thinkingLevel]);
+    // 释放 object URL
+    attachments.forEach((a) => URL.revokeObjectURL(a.url));
+    setAttachments([]);
+  }, [draft, attachments, isGenerating, sessionId, sendChat, currentEngine, thinkingLevel, workingDirectory]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -809,6 +854,32 @@ export default function SessionChatPage() {
       {/* ── 输入区 ───────────────────────────────── */}
       <footer className="shrink-0 border-t border-slate-200/60 bg-white/80 backdrop-blur-md dark:border-slate-800/60 dark:bg-slate-950/80">
         <div className="mx-auto max-w-3xl px-4 py-3">
+          {/* ── 附件预览 ── */}
+          {attachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {attachments.map((a, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
+                >
+                  <Paperclip className="h-3 w-3" />
+                  {a.file.name}
+                  <span className="opacity-60">{formatBytes(a.file.size)}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      URL.revokeObjectURL(a.url);
+                      setAttachments((prev) => prev.filter((_, idx) => idx !== i));
+                    }}
+                    className="ml-0.5 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800"
+                    title="移除附件"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="flex items-end gap-2">
             <div className="flex-1 rounded-2xl border border-slate-200 bg-white shadow-sm transition focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-slate-800 dark:bg-slate-900">
               <textarea
@@ -822,6 +893,33 @@ export default function SessionChatPage() {
                 style={{ minHeight: "44px", maxHeight: "200px" }}
               />
             </div>
+            {/* 上传附件 */}
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              size="lg"
+              variant="outline"
+              disabled={connectionStatus !== "connected" && !isGenerating}
+              className="h-11 w-11 shrink-0 rounded-2xl p-0 border-slate-200 dark:border-slate-700"
+              title="上传文件"
+            >
+              <Paperclip className="h-4 w-4 text-slate-500" />
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                if (files.length === 0) return;
+                const newAttachments = files.map((f) => ({
+                  file: f,
+                  url: URL.createObjectURL(f),
+                }));
+                setAttachments((prev) => [...prev, ...newAttachments]);
+                e.target.value = "";
+              }}
+            />
             {isGenerating ? (
               <Button
                 onClick={stopGeneration}
@@ -836,13 +934,35 @@ export default function SessionChatPage() {
               <Button
                 onClick={handleSend}
                 size="lg"
-                disabled={!draft.trim() || connectionStatus !== "connected"}
+                disabled={(!draft.trim() && attachments.length === 0) || connectionStatus !== "connected" || uploading}
                 className={cn("h-11 w-11 shrink-0 rounded-2xl p-0 bg-gradient-to-br shadow-md", meta.gradient, "hover:opacity-90")}
-                title="发送"
+                title={uploading ? "上传中…" : "发送"}
               >
-                <Send className="h-4 w-4" />
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
             )}
+          </div>
+          {/* ── 工作目录输入 ── */}
+          <div className="mt-2 flex items-center gap-2">
+            <div className="flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-muted-foreground transition focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-500/20 dark:border-slate-800 dark:bg-slate-900">
+              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+              <input
+                value={workingDirectory}
+                onChange={(e) => setWorkingDirectory(e.target.value)}
+                placeholder="工作目录（绝对路径，留空则使用服务端默认目录）"
+                className="flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+              />
+              {workingDirectory && (
+                <button
+                  type="button"
+                  onClick={() => setWorkingDirectory("")}
+                  className="rounded-full hover:text-foreground"
+                  title="清除工作目录"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           </div>
           <p className="mt-2 text-center text-[11px] text-muted-foreground">
             Enter 发送 · Shift+Enter 换行 · 由 <span className="font-medium text-foreground">{meta.label}</span> 驱动

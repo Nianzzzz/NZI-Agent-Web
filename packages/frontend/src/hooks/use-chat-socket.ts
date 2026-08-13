@@ -22,7 +22,7 @@ export interface UseChatSocketReturn {
   /** 已发出请求但尚未收到首个 token（思考或回答），用于显示缓冲提示 */
   readonly buffering: boolean;
   readonly currentRequestId: string | null;
-  readonly sendChat: (prompt: string, agentType?: "PI" | "GROK", thinkingLevel?: "off" | "low" | "medium" | "high") => void;
+  readonly sendChat: (prompt: string, agentType?: "PI" | "GROK", thinkingLevel?: "off" | "low" | "medium" | "high", workingDirectory?: string) => void;
   readonly stopGeneration: () => void;
   readonly connect: () => void;
   readonly disconnect: () => void;
@@ -282,7 +282,7 @@ export function useChatSocket({
   }, [clearReconnect, setWebSocket, setConnectionStatus]);
 
   const sendChat = useCallback(
-    (prompt: string, agentType: "PI" | "GROK" = "PI", thinkingLevel: "off" | "low" | "medium" | "high" = "off") => {
+    (prompt: string, agentType: "PI" | "GROK" = "PI", thinkingLevel: "off" | "low" | "medium" | "high" = "off", workingDirectory?: string) => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         onError?.("WebSocket is not connected");
@@ -322,7 +322,7 @@ export function useChatSocket({
       // 3. 发往 WS
       const message: unknown = {
         type: "chat",
-        payload: { sessionId, agentType, prompt, thinkingLevel },
+        payload: { sessionId, agentType, prompt, thinkingLevel, workingDirectory },
       };
       ws.send(JSON.stringify(message));
       forceTick((n) => n + 1);

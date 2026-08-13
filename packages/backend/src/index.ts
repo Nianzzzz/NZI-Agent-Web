@@ -13,6 +13,7 @@ import helmet from "@fastify/helmet";
 import jwt from "@fastify/jwt";
 import websocket from "@fastify/websocket";
 import redis from "@fastify/redis";
+import multipart from "@fastify/multipart";
 import Redis from "ioredis";
 import { PrismaClient } from "@prisma/client";
 import { JWT_SECRET } from "./config/auth.config.js";
@@ -164,6 +165,14 @@ fastify.get("/ready", async () => ({
 // ─── Arena Service（共享单例：HTTP + WS 路由共用同一内存 Map） ──
 const arenaService = new ArenaService(new SessionService(prisma));
 fastify.decorate("arenaService", arenaService);
+
+// ─── 文件上传（multipart）───────────────────────────────────────
+// 单文件最大 10 MiB，保存到 os.tmpdir()/nzi-uploads/<sessionId>/
+await fastify.register(multipart, {
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10 MiB
+  },
+});
 
 // ─── API Routes ───────────────────────────────────────────────────
 
