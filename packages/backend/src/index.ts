@@ -112,6 +112,7 @@ fastify.addHook("onRequest", async (request, reply) => {
   const url = request.url;
   if (
     url.startsWith("/api/auth/") ||
+    url.startsWith("/api/files/") ||
     url.startsWith("/health") ||
     url.startsWith("/ready") ||
     url.startsWith("/api/ws/") ||
