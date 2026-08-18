@@ -173,13 +173,13 @@ export default function AgentTimeline({
   // 任何节点还在 running 状态都视为 streaming 中（思考/工具/回答）
   const isStreaming = nodes.some((n) => n.status === "running");
 
-  // 用户手动控制折叠/展开（仅在非 streaming 时生效）
-  const [userExpanded, setUserExpanded] = useState(false);
+  // 用户手动控制折叠/展开（streaming 期间也可手动折叠，方便查看最终答案）
+  const [userExpanded, setUserExpanded] = useState(true);
   // 记录上一次 isStreaming 的值，用于检测 streaming → done 的转换
   const wasStreamingRef = useRef(isStreaming);
 
   useEffect(() => {
-    // streaming 刚结束时，自动折叠
+    // streaming 刚结束时，自动折叠推理区域
     if (wasStreamingRef.current && !isStreaming) {
       setUserExpanded(false);
     }
@@ -188,17 +188,15 @@ export default function AgentTimeline({
 
   if (detailNodes.length === 0) return null;
 
-  // streaming 中强制展开，否则由用户控制
-  const expanded = isStreaming || userExpanded;
+  // streaming 中默认展开，但允许用户手动折叠；完成后自动折叠，用户可手动展开
+  const expanded = userExpanded;
 
   return (
     <div className="mt-3 border-t border-slate-200/40 pt-2.5 dark:border-slate-800/40">
-      {/* 可点击的标题栏 */}
+      {/* 可点击的标题栏 — streaming 期间也可手动折叠/展开 */}
       <button
         type="button"
-        onClick={() => {
-          if (!isStreaming) setUserExpanded((v) => !v);
-        }}
+        onClick={() => setUserExpanded((v) => !v)}
         className="flex w-full cursor-pointer select-none items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
       >
         <ChevronRight
@@ -212,6 +210,8 @@ export default function AgentTimeline({
             <Loader2 className="h-3 w-3 animate-spin text-blue-500" />
             推理中…
           </span>
+        ) : expanded ? (
+          <span>收起推理过程</span>
         ) : (
           <span>查看推理过程</span>
         )}

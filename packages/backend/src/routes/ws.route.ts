@@ -9,6 +9,7 @@ import type { FastifyPluginAsync } from "fastify";
 import type { TokenPayload } from "../config/auth.config.js";
 import { WsChatController } from "../controllers/ws-chat.controller.js";
 import { WsArenaController } from "../controllers/ws-arena.controller.js";
+import { SkillService } from "../services/skill.service.js";
 
 interface WsRequest {
   url: string;
@@ -25,7 +26,8 @@ const wsChatRoutes: FastifyPluginAsync = async (fastify) => {
     throw new Error("ArenaService not decorated — index.ts must call fastify.decorate('arenaService', ...) before registering routes");
   }
 
-  const chatController = new WsChatController(sessionService, verify);
+  const skillService = (fastify as unknown as { skillService?: SkillService }).skillService ?? new SkillService(fastify.prisma);
+  const chatController = new WsChatController(sessionService, skillService, verify);
   fastify.get(
     "/api/ws/chat",
     { websocket: true },

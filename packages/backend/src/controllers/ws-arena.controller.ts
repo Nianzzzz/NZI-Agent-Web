@@ -98,15 +98,8 @@ export class WsArenaController {
 
     this.arenaService.registerRequest(matchId, side, { abortController, texts });
 
-    // 写入用户提问到 Arena 会话（不带 arenaSide，作为公共 prompt）
-    const matchPrompt = this.arenaService.getMatch(matchId).then((m) => {
-      void this.sessionService.createMessage({
-        sessionId: sideInfo.sessionId,
-        role: "USER",
-        content: m?.prompt ?? "",
-        latencyMs: 0,
-      });
-    });
+    // 用户提问由前端在 UI 层渲染（不写库），避免 A/B 两侧各写一条导致重复。
+    // 历史上下文仍通过 _loadHistoryMessages 从 DB 加载。
 
     this.sendSocket(socket, {
       type: "status",
@@ -172,6 +165,18 @@ export class WsArenaController {
     } as never);
 
     let finalDoneSent = false;
+
+    /**
+     * 在发送 done 之前，将所有仍 stuck in running 的节点标记为 done，
+     * 防止前端推理中 spinner 永远转圈。
+     */
+    const finalizeAllRunningNodes = () => {
+      for (const node of ctx.nodes.values()) {
+        if (node.status === "running") {
+          node.status = "done";
+        }
+      }
+    };
 
     try {
       for await (const event of eventIterator) {
@@ -254,6 +259,7 @@ export class WsArenaController {
         if (eventType === "agent_end" || eventType === "turn_end") {
           if (!finalDoneSent && ctx.texts.length > 0) {
             finalDoneSent = true;
+            finalizeAllRunningNodes();
             const fullText = ctx.texts.join("");
             const finalNodes = Array.from(ctx.nodes.values());
             await this.sessionService.createMessage({

@@ -191,9 +191,12 @@ export function useChatSocket({
     setConnectionStatus("connecting");
     setConnectionError(null);
 
-    // Close previous socket if any (cleanup before new connect)
+    // Close previous socket if any (cleanup before new connect).
+    // 只关闭已建立的连接（OPEN），CONNECTING 状态的 socket 调用 close() 会触发
+    // 浏览器原生报错 "WebSocket is closed before the connection is established"，
+    // 让它自然走到 close 事件即可，不需要主动关闭。
     const prev = wsRef.current;
-    if (prev && prev.readyState !== WebSocket.CLOSED) {
+    if (prev && prev.readyState === WebSocket.OPEN) {
       try { prev.close(1000, "Reconnecting"); } catch { /* ignore */ }
     }
     // 注意：不在这里把 wsRef 置 null，让 disconnect cleanup 来处理，
@@ -307,10 +310,10 @@ export function useChatSocket({
     clearReconnect();
     const ws = wsRef.current;
     if (ws) {
-      // 只在已连接时主动关闭；CONNECTING 状态的 socket 关闭会触发
-      // "WebSocket is closed before the connection is established" 错误，
-      // 让它自然走到 close 事件即可。
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      // 只在已连接（OPEN）时主动关闭；CONNECTING 状态的 socket 调用 close()
+      // 会触发浏览器原生报错 "WebSocket is closed before the connection is established"，
+      // 让它自然走到 close 事件即可（close 回调会检查 mountedRef，卸载后不处理）。
+      if (ws.readyState === WebSocket.OPEN) {
         try { ws.close(1000, "Client disconnecting"); } catch { /* already closed */ }
       }
       wsRef.current = null;

@@ -27,6 +27,8 @@ export interface ChatMessage {
   latencyMs?: number;
   /** T010: Agent Loop Timeline 节点 */
   nodes?: TimelineNode[];
+  /** Arena 对战侧标识（A=PI, B=GROK），仅 Arena 会话的消息有此值 */
+  arenaSide?: string;
 }
 
 interface ActiveRequest {
@@ -199,10 +201,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   completeStreaming: (sessionId, message) =>
     set((state) => {
       const streaming = state.streamingBySession[sessionId];
-      // 把 streaming 期间积累的 nodes 保留到最终消息
+      // 把 streaming 期间积累的 nodes 保留到最终消息，
+      // 并确保所有节点都已标记为 done（防止后端未发送 end 事件导致节点 stuck in running）
+      const rawNodes = streaming?.nodes ?? message.nodes;
+      const finalizedNodes = rawNodes?.map((n) =>
+        n.status === "running" ? { ...n, status: "done" as const } : n,
+      );
       const finalMessage: ChatMessage = {
         ...message,
-        nodes: streaming?.nodes ?? message.nodes,
+        nodes: finalizedNodes,
       };
       const existing = state.messagesBySession[sessionId] ?? [];
       const deduped = existing.some((m) => m.id === finalMessage.id)

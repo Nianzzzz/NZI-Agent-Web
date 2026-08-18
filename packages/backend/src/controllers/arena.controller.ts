@@ -35,7 +35,18 @@ export class ArenaController {
     const user = req.user as TokenPayload | undefined;
     if (!user) return reply.status(401).send({ error: "未登录或登录已过期" });
     const matches = await this.arenaService.getAllMatches(user.tenantId);
-    return reply.send({ matches });
+    // 统一将 id 映射为 matchId，与 create/continue 的响应格式保持一致
+    return reply.send({
+      matches: matches.map((m) => ({
+        matchId: m.id,
+        prompt: m.prompt,
+        thinkingLevel: m.thinkingLevel,
+        status: m.status,
+        sides: m.sides,
+        createdAt: m.createdAt,
+        votes: m.votes,
+      })),
+    });
   }
 
   async vote(req: FastifyRequest<{ Params: { id: string }; Body: { winner: "A" | "B" | "tie" } }>, reply: FastifyReply) {
@@ -85,5 +96,18 @@ export class ArenaController {
       sides: match.sides,
       createdAt: match.createdAt,
     });
+  }
+
+  /**
+   * DELETE /api/arena/:id
+   * 删除一场对战（含关联的 Arena 会话、消息、投票）
+   */
+  async delete(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+    const user = req.user as TokenPayload | undefined;
+    if (!user) return reply.status(401).send({ error: "未登录或登录已过期" });
+
+    const ok = await this.arenaService.deleteMatch(req.params.id, user.tenantId);
+    if (!ok) return reply.status(404).send({ error: "对战不存在或无权限" });
+    return reply.send({ ok: true });
   }
 }

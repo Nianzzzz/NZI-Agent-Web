@@ -18,7 +18,7 @@ import {
   ArrowLeft, Bot, Cpu, Send, Square, Loader2,
   Sparkles, AlertCircle, CheckCircle2, MessageSquare, User as UserIcon, Brain,
   ChevronDown, ChevronRight, Copy, Check, Trash2, Pencil, RefreshCw,
-  Paperclip, FolderOpen, X, GitBranch,
+  Paperclip, FolderOpen, X, GitBranch, Vote, Trophy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -387,6 +387,429 @@ function SessionNavigator({ turns, currentTurn }: {
   );
 }
 
+// ─── Arena 会话专用视图：并排双栏，独立滚动 ──────────────────
+
+interface ArenaRound {
+  roundIndex: number;
+  prompt: ChatMessage | null;
+  sideA: ChatMessage | null;
+  sideB: ChatMessage | null;
+}
+
+/** 将扁平消息列表按轮次分组（user prompt + A/B 回答） */
+function groupArenaRounds(messages: ChatMessage[], streaming: ChatMessage | null): ArenaRound[] {
+  const rounds: ArenaRound[] = [];
+  for (const m of messages) {
+    if (m.role === "user") {
+      // 去重：跳过与上一轮提问内容相同的重复条目。
+      // 旧 DB 数据中同一提问可能被写入两次（后端已修复，此处兼容存量数据）。
+      const normalized = m.content.trim();
+      const prev = rounds[rounds.length - 1]?.prompt;
+      if (prev && prev.content.trim() === normalized) continue;
+      rounds.push({ roundIndex: rounds.length, prompt: m, sideA: null, sideB: null });
+    } else if (m.arenaSide === "A") {
+      const last = rounds[rounds.length - 1];
+      if (last) last.sideA = m;
+    } else if (m.arenaSide === "B") {
+      const last = rounds[rounds.length - 1];
+      if (last) last.sideB = m;
+    }
+  }
+  // 将当前 streaming 消息路由到对应侧的最新一轮
+  if (streaming) {
+    const side = streaming.arenaSide === "A" ? "A" : streaming.arenaSide === "B" ? "B" : null;
+    if (side) {
+      const last = rounds[rounds.length - 1];
+      if (last) {
+        if (side === "A") last.sideA = streaming;
+        else last.sideB = streaming;
+      }
+    }
+  }
+  return rounds;
+}
+
+/** Arena 单侧面板（含完整操作按钮） */
+function ArenaSidePanel({
+  side,
+  label,
+  provider,
+  gradient,
+  bgColor,
+  message,
+  buffering,
+  lastMessage,
+  onRemove,
+  onEdit,
+  onRegenerate,
+}: {
+  side: "A" | "B";
+  label: string;
+  provider: string;
+  gradient: string;
+  bgColor: string;
+  message: ChatMessage | null;
+  buffering: boolean;
+  lastMessage: boolean;
+  onRemove?: (messageId: string) => void;
+  onEdit?: (messageId: string, newText: string) => void;
+  onRegenerate?: (messageId: string) => void;
+}) {
+  const isStreaming = message?.status === "streaming";
+  const isCompleted = message?.status === "completed";
+  const isError = message?.status === "error";
+  const isInterrupted = message?.status === "interrupted";
+  const hasNodes = message?.nodes && message.nodes.length > 0;
+  const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(message?.content ?? "");
+  const editInputRef = useRef<HTMLTextAreaElement>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const autoScrollRef = useRef(false);
+
+  useEffect(() => {
+    if (editing) editInputRef.current?.focus();
+  }, [editing]);
+
+  useEffect(() => {
+    // 编辑时同步最新内容
+    if (message) setEditText(message.content);
+  }, [message?.content]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 流式生成期间自动跟随到底部（仅在该面板内滚动）
+  useEffect(() => {
+    autoScrollRef.current = isStreaming;
+    if (!isStreaming) return;
+    let rafId: number;
+    const tick = () => {
+      if (!autoScrollRef.current) return;
+      const el = contentRef.current?.closest("[data-side-scroll]");
+      if (el) {
+        (el as HTMLElement).scrollTop = (el as HTMLElement).scrollHeight;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(rafId); autoScrollRef.current = false; };
+  }, [isStreaming]);
+
+  const handleCopy = async () => {
+    if (!message?.content) return;
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* ignore */ }
+  };
+
+  const handleSaveEdit = () => {
+    const text = editText.trim();
+    if (!text || !onEdit || !message) { setEditing(false); setEditText(message?.content ?? ""); return; }
+    onEdit(message.id, text);
+    setEditing(false);
+  };
+
+  const handleCancelEdit = () => {
+    setEditing(false);
+    setEditText(message?.content ?? "");
+  };
+
+  return (
+    <div className={cn("flex w-1/2 flex-col rounded-2xl border min-h-0", bgColor,
+      "border-slate-200/60 dark:border-slate-800",
+    )}>
+      {/* 顶部标签 */}
+      <div className="mb-3 flex items-center justify-between px-4 pt-4">
+        <div className="flex items-center gap-2">
+          <span className={cn("flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white shadow bg-gradient-to-br", gradient)}>
+            {label}
+          </span>
+          <span className={cn("rounded-full bg-gradient-to-r px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white", gradient)}>
+            {provider}
+          </span>
+          {isStreaming && <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />}
+          {isCompleted && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
+          {isError && <AlertCircle className="h-3.5 w-3.5 text-red-500" />}
+        </div>
+        {isCompleted && message?.latencyMs != null && (
+          <span className="text-[10px] text-slate-400">{message.latencyMs}ms</span>
+        )}
+      </div>
+
+      {/* 内容区（独立滚动，占满剩余高度） */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4" data-side-scroll>
+        {!message && !isStreaming ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-400">
+            <Bot className="h-6 w-6 opacity-30" />
+            <span className="text-xs">等待回答</span>
+          </div>
+        ) : !message ? null : (
+          <div className="flex flex-col gap-3">
+            {hasNodes && (
+              <div className="rounded-lg border border-slate-200/60 bg-slate-50/70 dark:border-slate-700/50 dark:bg-slate-900/40 p-3">
+                <AgentTimeline nodes={message.nodes ?? []} engineGradient="" />
+              </div>
+            )}
+            <div ref={contentRef}>
+              {editing && onEdit ? (
+                <div className="space-y-2">
+                  <textarea
+                    ref={editInputRef}
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveEdit(); }
+                      if (e.key === "Escape") { e.preventDefault(); handleCancelEdit(); }
+                    }}
+                    rows={3}
+                    className="w-full resize-y rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm text-foreground outline-none ring-2 ring-blue-500/20 dark:bg-slate-900"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveEdit}
+                      className="rounded-full bg-blue-500 px-3 py-1 text-[10px] font-semibold text-white hover:bg-blue-600"
+                    >
+                      确认
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="rounded-full border border-slate-200 px-3 py-1 text-[10px] text-slate-500 hover:bg-slate-50 dark:border-slate-700"
+                    >
+                      取消
+                    </button>
+                    <span className="text-[10px] text-slate-400">Enter 确认 · Esc 取消</span>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {!message.content && !isStreaming ? (
+                    <span className="inline-flex items-center gap-1.5 text-slate-400 text-sm">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      思考中…
+                    </span>
+                  ) : (
+                    <>
+                      <Markdown>{message.content}</Markdown>
+                      {isStreaming && (
+                        <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-current align-middle text-slate-400" />
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+            {isInterrupted && (
+              <p className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
+                <AlertCircle className="h-3 w-3" />
+                生成已中断
+              </p>
+            )}
+            {isError && (
+              <p className="flex items-center gap-1 text-[11px] text-red-600 dark:text-red-400">
+                <AlertCircle className="h-3 w-3" />
+                {message?.content || "出错了"}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 操作按钮（hover 显示在右上角） */}
+      {(message && (onRemove || onEdit || onRegenerate)) && (
+        <div className="absolute -right-2 top-0 z-10 flex flex-col gap-1.5 opacity-0 transition-all group-hover:opacity-100">
+          {/* 复制（仅 completed） */}
+          {isCompleted && message.content && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+              title="复制内容"
+            >
+              {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+              {copied ? "已复制" : "复制"}
+            </button>
+          )}
+          {/* 编辑 */}
+          {onEdit && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 shadow-sm transition-all hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+              title="编辑消息"
+            >
+              <Pencil className="h-3 w-3" />
+              编辑
+            </button>
+          )}
+          {/* 重新生成 */}
+          {onRegenerate && isCompleted && lastMessage && (
+            <button
+              type="button"
+              onClick={() => onRegenerate(message.id)}
+              className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 shadow-sm transition-all hover:border-violet-300 hover:text-violet-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+              title="重新生成"
+            >
+              <RefreshCw className="h-3 w-3" />
+              重生成
+            </button>
+          )}
+          {/* 移除 */}
+          {onRemove && (
+            <button
+              type="button"
+              onClick={() => onRemove(message.id)}
+              className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700 shadow-sm transition-all hover:border-amber-300 hover:text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+              title="移除整轮对话"
+            >
+              <Trash2 className="h-3 w-3" />
+              移除
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Arena 单轮视图：共享 prompt + 并排双栏 */
+function ArenaRoundRow({
+  round,
+  buffering,
+  onRemoveMessage,
+  onEditMessage,
+  onRegenerate,
+  lastRound,
+  renderedMessages,
+}: {
+  round: ArenaRound;
+  buffering: boolean;
+  onRemoveMessage?: (messageId: string) => void;
+  onEditMessage?: (messageId: string, newText: string) => void;
+  onRegenerate?: (messageId: string) => void;
+  lastRound: boolean;
+  renderedMessages: ChatMessage[];
+}) {
+  const aStreaming = round.sideA?.status === "streaming";
+  const bStreaming = round.sideB?.status === "streaming";
+
+  return (
+    <div className={cn("flex flex-col gap-6", lastRound && "flex-1 min-h-0")}>
+      {/* 共享用户提问 */}
+      {round.prompt && (
+        <div className="flex justify-end shrink-0" id={`msg-${round.prompt.id}`}>
+          <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-gradient-to-br from-blue-500 to-indigo-600 px-4 py-3 text-sm text-white shadow-sm">
+            <div className="mb-1.5 flex items-center gap-1.5 text-[10px] opacity-70">
+              <MessageSquare className="h-3 w-3" />
+              <span>第 {round.roundIndex + 1} 轮提问</span>
+            </div>
+            <div className="whitespace-pre-wrap break-words">{round.prompt.content}</div>
+          </div>
+        </div>
+      )}
+
+      {/* 并排双栏 — 最后一轮 flex-1 撑满剩余高度 */}
+      <div className={cn("flex gap-1", lastRound && "flex-1 min-h-0")}>
+        {/* Side A — Pi Agent */}
+        <div className="group relative flex w-1/2 flex-col min-h-0">
+          <ArenaSidePanel
+            side="A"
+            label="A"
+            provider="Pi Agent"
+            gradient="from-violet-500 to-fuchsia-600"
+            bgColor="bg-violet-50/60 dark:bg-violet-950/15"
+            message={round.sideA}
+            buffering={buffering}
+            lastMessage={lastRound}
+            onRemove={onRemoveMessage}
+            onEdit={round.prompt ? onEditMessage : undefined}
+            onRegenerate={round.sideA ? onRegenerate : undefined}
+          />
+        </div>
+
+        {/* Side B — Grok Agent */}
+        <div className="group relative flex w-1/2 flex-col min-h-0">
+          <ArenaSidePanel
+            side="B"
+            label="B"
+            provider="Grok Agent"
+            gradient="from-amber-500 to-orange-600"
+            bgColor="bg-amber-50/60 dark:bg-amber-950/15"
+            message={round.sideB}
+            buffering={buffering}
+            lastMessage={lastRound}
+            onRemove={onRemoveMessage}
+            onEdit={round.prompt ? onEditMessage : undefined}
+            onRegenerate={round.sideB ? onRegenerate : undefined}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Arena 会话视图主组件 */
+function ArenaSessionView({
+  messages,
+  streamingMessage,
+  buffering,
+  onRemoveMessage,
+  onEditMessage,
+  onRegenerate,
+}: {
+  messages: ChatMessage[];
+  streamingMessage: ChatMessage | null;
+  buffering: boolean;
+  onRemoveMessage?: (messageId: string) => void;
+  onEditMessage?: (messageId: string, newText: string) => void;
+  onRegenerate?: (messageId: string) => void;
+}) {
+  const rounds = useMemo(
+    () => groupArenaRounds(messages, streamingMessage),
+    [messages, streamingMessage],
+  );
+
+  if (rounds.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-100 to-amber-100 dark:from-violet-950/50 dark:to-amber-950/50">
+          <Trophy className="h-7 w-7 text-violet-600 dark:text-violet-400" />
+        </div>
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold text-foreground">Arena 对战会话</h2>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            双引擎并行对比的结果将在这里并排展示。
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const lastIdx = rounds.length - 1;
+
+  return (
+    <div className="flex h-full flex-col gap-4 px-2 py-4">
+      {rounds.map((round, idx) => {
+        const isLast = idx === lastIdx;
+        return (
+          <div key={round.roundIndex} className={cn("flex flex-col", isLast && "flex-1 min-h-0")}>
+            <ArenaRoundRow
+              round={round}
+              buffering={buffering}
+              onRemoveMessage={onRemoveMessage}
+              onEditMessage={onEditMessage}
+              onRegenerate={onRegenerate}
+              lastRound={isLast}
+              renderedMessages={messages}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── 主页面 ─────────────────────────────────────────────────────
 
 export default function SessionChatPage() {
@@ -400,6 +823,8 @@ export default function SessionChatPage() {
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // 延迟 WS 连接直到确认会话存在，避免对已删除会话发起无效连接
+  const [sessionExists, setSessionExists] = useState(false);
   const [draft, setDraft] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState<"off" | "low" | "medium" | "high">("off");
   const [currentEngine, setCurrentEngine] = useState<"PI" | "GROK">("PI");
@@ -432,12 +857,20 @@ export default function SessionChatPage() {
     buffering,
     sendChat,
     stopGeneration,
-  } = useChatSocket({ sessionId, token, autoConnect: true });
+  } = useChatSocket({ sessionId, token, autoConnect: sessionExists });
 
   // 移除消息：删除整轮对话（user + assistant），先乐观更新 store，再调用后端 API
   const handleRemoveMessage = useCallback(
     async (messageId: string) => {
-      // 乐观：从 store 移除整轮（该消息 + 配对的 assistant/user）
+      // Arena 模式：只移除当前 assistant 消息（不删除用户提问）
+      if (session?.arenaMatchId) {
+        removeMessage(sessionId, messageId);
+        try {
+          await deleteMessage(messageId);
+        } catch { /* ignore */ }
+        return;
+      }
+      // 普通模式：乐观删除整轮（user + assistant）
       const idx = messages.findIndex((m) => m.id === messageId);
       if (idx >= 0) {
         const target = messages[idx];
@@ -455,7 +888,7 @@ export default function SessionChatPage() {
         // 删除失败时不影响已有 UI（消息已从列表中移除）
       }
     },
-    [sessionId, removeMessage, messages],
+    [sessionId, removeMessage, messages, session],
   );
 
   // ─── 加载 session 详情 + 历史消息 ───────────────────────────
@@ -495,6 +928,7 @@ export default function SessionChatPage() {
         }
 
         setSession(detail);
+        setSessionExists(true);
         // 用会话的 engine 初始化当前引擎选择器
         if (detail.engine === "PI" || detail.engine === "GROK") {
           setCurrentEngine(detail.engine);
@@ -511,6 +945,7 @@ export default function SessionChatPage() {
             createdAt: new Date(m.createdAt),
             latencyMs: m.latencyMs ?? undefined,
             nodes: (m.timelineNodes as import("@/types/chat.types").TimelineNode[] | undefined) ?? undefined,
+            arenaSide: (m as { arenaSide?: string | null }).arenaSide ?? undefined,
           })),
         );
         setIsLoading(false);
@@ -538,6 +973,9 @@ export default function SessionChatPage() {
     if (streamingMessage) list.push(streamingMessage);
     return list.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   }, [messages, streamingMessage]);
+
+  // ─── Arena 会话检测 ─────────────────────────────────────────
+  const isArenaSession = !!session?.arenaMatchId || renderedMessages.some((m) => m.arenaSide);
 
   // ─── 自动标题：当会话还是默认标题且有消息时，用首轮提问生成标题 ──
   const { refreshSessions } = useSessionStore();
@@ -627,7 +1065,7 @@ export default function SessionChatPage() {
     const tick = () => {
       if (!autoScrollEnabledRef.current) return;
       const el = scrollContainerRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
@@ -642,7 +1080,7 @@ export default function SessionChatPage() {
     const observer = new ResizeObserver(() => {
       const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
       if (isNearBottom) {
-        el.scrollTop = el.scrollHeight;
+        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
         setUserScrolledUp(false);
       }
     });
@@ -653,6 +1091,11 @@ export default function SessionChatPage() {
   const scrollToBottom = useCallback(() => {
     setUserScrolledUp(false);
     setShowBackToLatest(false);
+    const el = scrollContainerRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      return;
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, []);
 
@@ -716,8 +1159,13 @@ export default function SessionChatPage() {
     for (let i = 0; i < renderedMessages.length; i++) {
       const m = renderedMessages[i];
       if (isUserMessage(m)) {
+        // Arena 会话去重：跳过与上一轮内容相同的重复提问（与 groupArenaRounds 逻辑保持一致），
+        // 避免右侧快捷跳转导航出现两条相同条目。
+        const normalized = m.content.trim();
+        const prev = result[result.length - 1];
+        if (prev && prev.preview === normalized.slice(0, 60)) continue;
         result.push({
-          preview: m.content.slice(0, 60),
+          preview: normalized.slice(0, 60),
           domId: `msg-${m.id}`,
           index: result.length,
         });
@@ -787,6 +1235,7 @@ export default function SessionChatPage() {
             </Link>
           </Button>
 
+          
           <div className={cn("h-10 w-10 shrink-0 rounded-xl bg-gradient-to-br text-white shadow-md ring-2 ring-offset-2 ring-offset-white dark:ring-offset-slate-950", meta.gradient, meta.ring)}>
             <div className="flex h-full w-full items-center justify-center">
               <Bot className="h-5 w-5" />
@@ -837,29 +1286,43 @@ export default function SessionChatPage() {
       <main
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto"
+        className={cn(
+          "flex-1",
+          isArenaSession ? "overflow-hidden" : "overflow-y-auto",
+        )}
       >
-        <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6">
-          {isLoading && renderedMessages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-24 text-sm text-muted-foreground">
-              <Loader2 className="h-6 w-6 animate-spin" />
-              正在加载会话…
+        {isLoading && renderedMessages.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            正在加载会话…
+          </div>
+        ) : isArenaSession ? (
+          // Arena 会话：并排双栏视图
+          <ArenaSessionView
+            messages={renderedMessages}
+            streamingMessage={streamingMessage}
+            buffering={buffering}
+            onRemoveMessage={handleRemoveMessage}
+            onEditMessage={handleEditMessage}
+            onRegenerate={handleRegenerate}
+          />
+        ) : renderedMessages.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-950/50 dark:to-indigo-950/50">
+              <Sparkles className="h-7 w-7 text-blue-600 dark:text-blue-400" />
             </div>
-          ) : renderedMessages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-950/50 dark:to-indigo-950/50">
-                <Sparkles className="h-7 w-7 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div className="space-y-1">
-                <h2 className="text-lg font-semibold text-foreground">开始对话</h2>
-                <p className="max-w-sm text-sm text-muted-foreground">
-                  下面的输入框里写任何问题，{meta.label} 会逐字流式回复。
-                </p>
-              </div>
-              <SuggestionChips onPick={(t) => setDraft(t)} />
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold text-foreground">开始对话</h2>
+              <p className="max-w-sm text-sm text-muted-foreground">
+                下面的输入框里写任何问题，{meta.label} 会逐字流式回复。
+              </p>
             </div>
-          ) : (
-            renderedMessages.map((m) => (
+            <SuggestionChips onPick={(t) => setDraft(t)} />
+          </div>
+        ) : (
+          // 普通会话：单列消息流
+          <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6">
+            {renderedMessages.map((m) => (
               <div key={m.id} id={`msg-${m.id}`}>
                 <MessageBubble
                   message={m}
@@ -874,10 +1337,10 @@ export default function SessionChatPage() {
                   }
                 />
               </div>
-            ))
-          )}
-          <div ref={messagesEndRef} className="h-2" />
-        </div>
+            ))}
+            <div ref={messagesEndRef} className="h-2" />
+          </div>
+        )}
 
         {/* ── 回到最下方按钮（生成期间用户上滑时显示，生成结束后自动消失） ── */}
         {showBackToLatest && (

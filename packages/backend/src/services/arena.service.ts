@@ -183,6 +183,35 @@ export class ArenaService {
     });
   }
 
+  /**
+   * 删除一场对战（含关联的 Arena 会话、消息、投票）
+   * 若关联会话已被手动删除，仅删除 match 记录本身。
+   */
+  async deleteMatch(matchId: string, tenantId: string): Promise<boolean> {
+    const dbMatch = await this.prisma.arenaMatch.findUnique({
+      where: { id: matchId },
+    });
+    if (!dbMatch || dbMatch.tenantId !== tenantId) return false;
+
+    await this.prisma.$transaction(async (tx) => {
+      // 找到关联的 Arena 会话并级联删除（消息会随会话级联删除）
+      const arenaSession = await tx.session.findFirst({
+        where: { arenaMatchId: matchId },
+        select: { id: true },
+      });
+      if (arenaSession) {
+        await tx.message.deleteMany({ where: { sessionId: arenaSession.id } });
+        await tx.session.delete({ where: { id: arenaSession.id } });
+      }
+      // 删除投票记录
+      await tx.arenaVote.deleteMany({ where: { matchId } });
+      // 删除对战记录
+      await tx.arenaMatch.delete({ where: { id: matchId } });
+    });
+
+    return true;
+  }
+
   registerRequest(matchId: string, side: "A" | "B", ctx: ArenaRequestCtx): void {
     const reqs = this.requests.get(matchId);
     if (reqs) reqs.set(side, ctx);

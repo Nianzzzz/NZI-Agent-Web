@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   Bot, Cpu, Send, Square, Loader2, Sparkles,
   AlertCircle, CheckCircle2, Trophy, Vote,
-  ChevronDown, MessageSquare,
+  ChevronDown, MessageSquare, History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/lib/auth-store";
@@ -56,6 +56,7 @@ export default function ArenaPage() {
   const [thinkingLevel, setThinkingLevel] = useState<"off" | "low" | "medium" | "high">("off");
   const [match, setMatch] = useState<ArenaMatch | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [currentPrompt, setCurrentPrompt] = useState("");
   const [sides, setSides] = useState<Record<SideLabel, SideState>>({
     A: { status: "idle", content: "", nodes: [], error: null },
     B: { status: "idle", content: "", nodes: [], error: null },
@@ -91,7 +92,7 @@ export default function ArenaPage() {
     }));
 
     ws.addEventListener("open", () => {
-      setSides((prev) => ({ ...prev, [side]: { ...prev[side], status: "connected" } }));
+      setSides((prev) => ({ ...prev, [side]: { ...prev[side], status: "connecting" } }));
       // 发送 chat 消息
       ws.send(JSON.stringify({
         type: "chat",
@@ -132,7 +133,7 @@ export default function ArenaPage() {
                   n.id === node.id ? { ...n, status: "done", delta: node.delta } : n
                 );
               }
-              return { ...prev, [side]: { ...cur, nodes: newNodes, status: cur.status === "connected" ? "streaming" : cur.status } };
+              return { ...prev, [side]: { ...cur, nodes: newNodes, status: cur.status === "connecting" || cur.status === "connected" ? "streaming" : cur.status } };
             }
             case "chunk": {
               const delta = data.payload.delta ?? "";
@@ -179,6 +180,7 @@ export default function ArenaPage() {
   const handleSend = async () => {
     const text = draft.trim();
     if (!text || isGenerating) return;
+    setCurrentPrompt(text.trim());
     setDraft("");
     setIsGenerating(true);
     setWinner(null);
@@ -288,11 +290,37 @@ export default function ArenaPage() {
               <span className="text-xs text-slate-500">第 {roundCount} 轮</span>
             </>
           )}
+          <Link
+            href="/dashboard/arena/history"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-500 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-blue-700 dark:hover:bg-blue-950/30"
+            title="查看对战历史"
+          >
+            <History className="h-3 w-3" />
+            历史
+          </Link>
         </div>
       </header>
 
       {/* ── 主内容：双栏 ── */}
-      <main className="flex-1 overflow-hidden">
+      <main className="relative flex-1 overflow-hidden">
+        {/* 生成中且尚无内容时，顶部显示提示词横幅 */}
+        {isGenerating && currentPrompt && sides.A.content === "" && sides.B.content === "" && (
+          <div className="pointer-events-none fixed left-1/2 top-3 z-20 flex w-full max-w-3xl -translate-x-1/2 items-center gap-3 rounded-xl border border-blue-200 bg-white/95 px-4 py-3 text-sm text-slate-700 shadow-lg backdrop-blur dark:border-blue-900/40 dark:bg-slate-900/90 dark:text-slate-200">
+            <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-blue-500" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-500">当前提问</span>
+              <p className="truncate">{currentPrompt}</p>
+            </div>
+            <span className="inline-flex gap-1">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400 [animation-delay:0ms]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400 [animation-delay:150ms]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400 [animation-delay:300ms]" />
+            </span>
+          </div>
+        )}
         <div className="mx-auto flex h-full max-w-7xl gap-3 px-4 py-3">
           {/* Side A */}
           <ArenaPanel

@@ -14,7 +14,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";import {
   Bot, Plus, LogOut, MoreHorizontal, Pencil, Trash2,
   Check, X, MessageSquare, ChevronLeft, ChevronRight,
-  Cpu, Sparkles, Trophy,
+  Cpu, Sparkles, Trophy, History, Wrench, Globe, Plug,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import { useSessionStore, type Session } from "@/lib/session-store";
@@ -36,8 +36,31 @@ interface SidebarProps {
   onToggleCollapse?: () => void;
 }
 
-export default function Sidebar({ collapsed = false, onToggleCollapse }: SidebarProps) {
+export default function Sidebar({ collapsed: collapsedProp = false, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(collapsedProp);
+
+  // 同步外部 collapsed 变化
+  useEffect(() => { setCollapsed(collapsedProp); }, [collapsedProp]);
+
+  // 监听 body 上的 sidebar-collapsed 类，用于跨组件同步
+  useEffect(() => {
+    const check = () => {
+      const isCollapsed = document.body.classList.contains("sidebar-collapsed");
+      setCollapsed(isCollapsed);
+    };
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  const handleToggle = () => {
+    const next = !collapsed;
+    document.body.classList.toggle("sidebar-collapsed", next);
+    setCollapsed(next);
+    onToggleCollapse?.();
+  };
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const { sessions, isLoading, fetchSessions, createSession, removeSession, renameSession } =
@@ -130,6 +153,7 @@ export default function Sidebar({ collapsed = false, onToggleCollapse }: Sidebar
           handleLogout={handleLogout}
           collapsed={false}
           onToggleCollapse={undefined}
+          handleToggle={handleToggle}
           currentPath={pathname}
         />
       </div>
@@ -164,6 +188,7 @@ export default function Sidebar({ collapsed = false, onToggleCollapse }: Sidebar
           handleLogout={handleLogout}
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
+          handleToggle={handleToggle}
           currentPath={pathname}
         />
       </aside>
@@ -191,6 +216,7 @@ function SidebarInner({
   handleLogout,
   collapsed,
   onToggleCollapse,
+  handleToggle,
   currentPath,
 }: {
   sessions: Session[];
@@ -210,6 +236,7 @@ function SidebarInner({
   handleLogout: () => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  handleToggle?: () => void;
   currentPath: string;
 }) {
   const isDashboard = currentPath === "/dashboard";
@@ -231,10 +258,9 @@ function SidebarInner({
             <Bot className="h-4 w-4 text-white" />
           </div>
         )}
-        {onToggleCollapse && (
-          <button
+        <button
             type="button"
-            onClick={onToggleCollapse}
+            onClick={onToggleCollapse ?? handleToggle}
             className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
             title={collapsed ? "展开侧边栏" : "收起侧边栏"}
           >
@@ -244,7 +270,6 @@ function SidebarInner({
               <ChevronLeft className="h-4 w-4" />
             )}
           </button>
-        )}
       </div>
 
       {/* ── 新建会话按钮 ── */}
@@ -397,15 +422,73 @@ function SidebarInner({
         )}
       </div>
 
-      {/* ── 底部：Arena 入口 + 用户信息 + 退出 ── */}
+      {/* ── 底部：Arena 入口 + 工具中心 + 用户信息 + 退出 ── */}
       <div className={cn("border-t border-slate-200/60 px-2 py-2 dark:border-slate-800/60", collapsed && "px-1")}>
+        {!collapsed && (
+          <div className="mb-2 flex items-center gap-1.5 px-2 text-[10px] uppercase tracking-wider text-slate-400">
+            <Trophy className="h-3 w-3" />
+            Arena
+          </div>
+        )}
         {!collapsed && (
           <Link
             href="/dashboard/arena"
-            className="mb-2 flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-500 transition-colors hover:bg-amber-50 hover:text-amber-700 dark:hover:bg-amber-950/20"
+            className="mb-1 flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-500 transition-colors hover:bg-amber-50 hover:text-amber-700 dark:hover:bg-amber-950/20"
           >
             <Trophy className="h-4 w-4 shrink-0" />
             <span className="font-medium">Arena 对战</span>
+          </Link>
+        )}
+        {!collapsed && (
+          <Link
+            href="/dashboard/arena/history"
+            className="mb-1 flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-500 transition-colors hover:bg-violet-50 hover:text-violet-700 dark:hover:bg-violet-950/20"
+          >
+            <History className="h-4 w-4 shrink-0" />
+            <span className="font-medium">对战历史</span>
+          </Link>
+        )}
+        {/* Tools */}
+        {!collapsed && (
+          <div className="mb-2 mt-2 flex items-center gap-1.5 px-2 text-[10px] uppercase tracking-wider text-slate-400">
+            <Wrench className="h-3 w-3" />
+            工具
+          </div>
+        )}
+        {!collapsed && (
+          <Link
+            href="/dashboard/tools"
+            className="mb-1 flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700 dark:hover:bg-slate-900/50 dark:hover:text-slate-300"
+          >
+            <Wrench className="h-4 w-4 shrink-0" />
+            <span className="font-medium">工具中心</span>
+          </Link>
+        )}
+        {!collapsed && (
+          <Link
+            href="/dashboard/tools/web-search"
+            className="mb-1 flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-500 transition-colors hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/20"
+          >
+            <Globe className="h-4 w-4 shrink-0" />
+            <span className="font-medium">联网搜索</span>
+          </Link>
+        )}
+        {!collapsed && (
+          <Link
+            href="/dashboard/tools/skills"
+            className="mb-1 flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-500 transition-colors hover:bg-violet-50 hover:text-violet-700 dark:hover:bg-violet-950/20"
+          >
+            <Sparkles className="h-4 w-4 shrink-0" />
+            <span className="font-medium">Skill 市场</span>
+          </Link>
+        )}
+        {!collapsed && (
+          <Link
+            href="/dashboard/tools/mcp"
+            className="mb-1 flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-500 transition-colors hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/20"
+          >
+            <Plug className="h-4 w-4 shrink-0" />
+            <span className="font-medium">MCP 服务器</span>
           </Link>
         )}
         {!collapsed && user && (
