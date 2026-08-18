@@ -1,13 +1,18 @@
 /**
  * API 代理路由 — 将所有 /api/* 请求转发到后端（localhost:4000）
  *
- * Next.js 16 App Router 不再保证 rewrites 对 /api/* 路径生效，
- * 因此用 catch-all route handler 显式代理，确保前后端 API 通路稳定。
+ * Next.js 16 App Router 不再保证 next.config.ts 中的 rewrites 对 /api/*
+ * 路径生效（/api 是 Next.js 的保留路由前缀）。因此用 catch-all route
+ * handler 显式代理，确保前后端 API 通路稳定。
  */
 
 import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND = process.env.BACKEND_URL ?? "http://127.0.0.1:4000";
+
+interface RouteParams {
+  path?: string[];
+}
 
 async function proxy(req: NextRequest, path: string[]): Promise<NextResponse> {
   const pathStr = path ? path.join("/") : "";
@@ -61,26 +66,35 @@ async function proxy(req: NextRequest, path: string[]): Promise<NextResponse> {
   }
 }
 
-export async function GET(req: NextRequest, context: { params: Promise<{ path: string[] }> }) {
-  return proxy(req, (await context.params).path);
+// Next.js 15+ route handler: params 为 Promise（async params）
+type HandlerContext = { params: Promise<RouteParams> };
+
+export async function GET(req: NextRequest, context: HandlerContext) {
+  const { path } = await context.params;
+  return proxy(req, path ?? []);
 }
 
-export async function POST(req: NextRequest, context: { params: Promise<{ path: string[] }> }) {
-  return proxy(req, (await context.params).path);
+export async function POST(req: NextRequest, context: HandlerContext) {
+  const { path } = await context.params;
+  return proxy(req, path ?? []);
 }
 
-export async function PUT(req: NextRequest, context: { params: Promise<{ path: string[] }> }) {
-  return proxy(req, (await context.params).path);
+export async function PUT(req: NextRequest, context: HandlerContext) {
+  const { path } = await context.params;
+  return proxy(req, path ?? []);
 }
 
-export async function DELETE(req: NextRequest, context: { params: Promise<{ path: string[] }> }) {
-  return proxy(req, (await context.params).path);
+export async function DELETE(req: NextRequest, context: HandlerContext) {
+  const { path } = await context.params;
+  return proxy(req, path ?? []);
 }
 
-export async function PATCH(req: NextRequest, context: { params: Promise<{ path: string[] }> }) {
-  return proxy(req, (await context.params).path);
+export async function PATCH(req: NextRequest, context: HandlerContext) {
+  const { path } = await context.params;
+  return proxy(req, path ?? []);
 }
 
-export async function OPTIONS(req: NextRequest, context: { params: Promise<{ path: string[] }> }) {
-  return proxy(req, (await context.params).path);
+export async function OPTIONS(req: NextRequest, context: HandlerContext) {
+  const { path } = await context.params;
+  return proxy(req, path ?? []);
 }
