@@ -6,7 +6,7 @@ Agent Runtime Orchestration Platform — 多 Agent 统一编排、会话管理�
 
 - **Frontend**: Next.js 16 + TypeScript + Tailwind CSS + Socket.io-client
 - **Backend**: Node.js (Fastify) + Socket.io + Prisma + PostgreSQL + Redis
-- **Agent Runtime**: Pi Agent SDK (process内桥接) + Grok Agent (Phase 2)
+- **Agent Runtime**: Pi Agent SDK (进程内桥接，走百炼 OpenAI 兼容 API) + Mock 兜底
 - **Infrastructure**: Docker Compose (PostgreSQL + Redis)
 
 ## 开发环境启动

@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Seed</title></head><body>
+<script>
+(async () => {
+  const email = 'seed' + Date.now() + '@nzilab.com';
+  const r = await fetch('/api/auth/register', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ email, password: 'Seed123!', displayName: 'Alex Chen' })
+  });
+  const { user, token } = await r.json();
+  // Create 3 sessions with different engines
+  const titles = ['🚀 Build a SaaS landing page', '🐛 Debug WebSocket reconnection bug', '📊 Analyze Q3 customer churn'];
+  for (let i = 0; i < 3; i++) {
+    await fetch('/api/sessions', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + token},
+      body: JSON.stringify({ title: titles[i], engine: i === 1 ? 'GROK' : 'PI' })
+    });
+  }
+  localStorage.setItem('nzi-auth', JSON.stringify({state: {user, token, isAuthenticated: true}, version: 0}));
+  window.location.href = '/dashboard';
+})();
+</script>
+<p>Seeding...</p>
+</body></html>

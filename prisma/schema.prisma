@@ -7,20 +7,20 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 // ─── User & Multi-Tenancy ──────────────────────────────────────────
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  passwordHash  String
-  displayName   String?
-  avatarUrl     String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  displayName  String?
+  avatarUrl    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   memberships TenantMember[]
   sessions    Session[]
@@ -29,24 +29,26 @@ model User {
 }
 
 model Tenant {
-  id        String    @id @default(cuid())
-  name      String
-  slug      String    @unique
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id           String    @id @default(cuid())
+  name         String
+  slug         String    @unique
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  members       TenantMember[]
-  sessions      Session[]
+  members    TenantMember[]
+  sessions   Session[]
   engineConfigs EngineConfig[]
-  settings      Json?
+  settings   Json?
+
+  @@map("tenants")
 }
 
 model TenantMember {
-  id        String     @id @default(cuid())
+  id        String       @id @default(cuid())
   userId    String
   tenantId  String
-  role      TenantRole @default(MEMBER)
-  createdAt DateTime   @default(now())
+  role      TenantRole   @default(MEMBER)
+  createdAt DateTime     @default(now())
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -64,18 +66,18 @@ enum TenantRole {
 // ─── Engine Configuration ──────────────────────────────────────────
 
 model EngineConfig {
-  id             String         @id @default(cuid())
-  tenantId       String
-  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  provider       EngineProvider // PI | GROK
-  apiKeyEncrypted String?
-  apiKeyIv       String?
-  apiKeyTag      String?
-  model          String?
-  thinkingLevel  ThinkingLevel?
-  isEnabled      Boolean        @default(true)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id               String        @id @default(cuid())
+  tenantId         String
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider         EngineProvider
+  apiKeyEncrypted  String?
+  apiKeyIv         String?
+  apiKeyTag        String?
+  model            String?
+  thinkingLevel    ThinkingLevel?
+  isEnabled        Boolean       @default(true)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   @@unique([tenantId, provider])
   @@map("engine_configs")
@@ -102,21 +104,26 @@ model Session {
   userId          String
   user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   title           String?
-  engine          EngineProvider @default(PI)
+  engine          EngineProvider @default(PI) // 保留字段向后兼容，默认 PI
   status          SessionStatus @default(ACTIVE)
   parentSessionId String?
+  parentSession   Session?    @relation("SessionTree", fields: [parentSessionId], references: [id])
   rootNodeId      String?
-  summary         String?       
+  summary         String?
   metadata        Json?
+  /** 关联的 Arena 对战 ID（仅 Arena 会话有此值） */
+  arenaMatchId    String?       @unique
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  messages  Message[]
-  events    AgentEvent[]
+  messages    Message[]
+  events      AgentEvent[]
+  children    Session[] @relation("SessionTree")
 
   @@index([tenantId, createdAt])
   @@index([userId, createdAt])
   @@index([parentSessionId])
+  @@index([arenaMatchId])
   @@map("sessions")
 }
 
@@ -129,18 +136,22 @@ enum SessionStatus {
 // ─── Message ───────────────────────────────────────────────────────
 
 model Message {
-  id         String     @id @default(cuid())
-  sessionId  String
-  session    Session    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  rootEventId String?
-  rootEvent  AgentEvent? @relation("RootMessage", fields: [rootEventId], references: [id])
-  role       MessageRole
-  content    String     
-  reasoning  String?    
-  toolCalls  Json?
-  tokenUsage Json?
-  latencyMs  Int?
-  createdAt  DateTime   @default(now())
+  id           String        @id @default(cuid())
+  sessionId    String
+  session      Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  rootEventId  String?
+  rootEvent    AgentEvent?   @relation("RootMessage", fields: [rootEventId], references: [id])
+  role         MessageRole
+  content      String
+  reasoning    String?
+  toolCalls    Json?
+  tokenUsage   Json?
+  latencyMs    Int?
+  status       MessageStatus @default(COMPLETED)
+  timelineNodes Json?
+  /** Arena 对战侧标识（A=PI, B=GROK），仅 Arena 会话的消息有此值 */
+  arenaSide    String?
+  createdAt    DateTime      @default(now())
 
   @@index([sessionId, createdAt])
   @@map("messages")
@@ -152,27 +163,32 @@ enum MessageRole {
   TOOL_RESULT
 }
 
+enum MessageStatus {
+  COMPLETED
+  INTERRUPTED
+}
+
 // ─── AgentEvent (Core Event Stream) ────────────────────────────────
 
 model AgentEvent {
-  id             String        @id @default(cuid())
-  sessionId      String
-  session        Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  provider       EngineProvider
-  eventType      AgentEventType
-  parentEventId  String?
-  parentEvent    AgentEvent?   @relation("EventTree", fields: [parentEventId], references: [id])
-  children       AgentEvent[]  @relation("EventTree")
-  nodeId         String        @unique
-  isFork         Boolean       @default(false)
-  isArena        Boolean       @default(false)
-  content        String?       
-  traceId        String
-  durationMs     Int?
-  tokenUsage     Json?
-  eventData      Json?
-  rootMessages   Message[]     @relation("RootMessage")
-  createdAt      DateTime      @default(now())
+  id            String       @id @default(cuid())
+  sessionId     String
+  session       Session      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  provider      EngineProvider
+  eventType     AgentEventType
+  parentEventId String?
+  parentEvent   AgentEvent?  @relation("EventTree", fields: [parentEventId], references: [id])
+  children      AgentEvent[] @relation("EventTree")
+  nodeId        String       @unique
+  isFork        Boolean      @default(false)
+  isArena       Boolean      @default(false)
+  content       String?
+  traceId       String
+  durationMs    Int?
+  tokenUsage    Json?
+  eventData     Json?
+  rootMessages  Message[]    @relation("RootMessage")
+  createdAt     DateTime     @default(now())
 
   @@index([sessionId, createdAt])
   @@index([sessionId, parentEventId])
@@ -197,18 +213,122 @@ enum AgentEventType {
   ERROR
 }
 
+// ─── Arena Match ──────────────────────────────────────────────────
+
+model ArenaMatch {
+  id            String          @id @default(cuid())
+  tenantId      String
+  userId        String
+  prompt        String
+  thinkingLevel ThinkingLevel?
+  status        ArenaMatchStatus @default(RUNNING)
+  createdAt     DateTime        @default(now())
+  completedAt   DateTime?
+
+  votes         ArenaVote[]
+
+  @@index([tenantId, createdAt])
+  @@map("arena_matches")
+}
+
+enum ArenaMatchStatus {
+  RUNNING
+  COMPLETED
+}
+
+model ArenaVote {
+  id        String       @id @default(cuid())
+  matchId   String
+  match     ArenaMatch   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  provider  EngineProvider
+  createdAt DateTime     @default(now())
+
+  @@index([matchId])
+  @@map("arena_votes")
+}
+
 // ─── Session Node (Phase 2 placeholder) ────────────────────────────
 
 model SessionNode {
-  id         String    @id
-  sessionId  String
-  createdAt  DateTime  @default(now())
+  id        String   @id
+  sessionId String
+  createdAt DateTime @default(now())
 
   @@index([sessionId])
   @@map("session_nodes")
 }
 
-// ─── Arena (Phase 2: Placeholder) ──────────────────────────────────
+// ─── Phase 3: Web Search, Skills, MCP ────────────────────────────────
 
-// model ArenaMatch { ... }
-// model ArenaVote { ... }
+model WebSearchConfig {
+  id          String   @id @default(cuid())
+  tenantId    String
+  provider    String   @default("duckduckgo") // duckduckgo | serpapi
+  apiKey      String?  // AES-256-GCM encrypted
+  apiKeyIv    String?
+  apiKeyTag   String?
+  maxResults  Int      @default(5)
+  isEnabled   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, provider])
+  @@map("web_search_configs")
+}
+
+model Skill {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  displayName String
+  description String
+  category    String   @default("custom") // coding | writing | analysis | devops | custom
+  version     String   @default("1.0.0")
+  author      String
+  authorType  String   @default("system") // system | community | user
+  icon        String   @default("sparkles")
+  tags        Json     @default("[]")
+  prompt      String   // 核心：注入到 system prompt 的指令
+  tools       Json     @default("[]") // 允许的工具列表
+  downloads   Int      @default(0)
+  rating      Float    @default(0)
+  isPublic    Boolean  @default(true)
+  tenantId    String?  // 用户自定义 skill 的归属租户
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userSkills  UserSkill[]
+
+  @@index([category])
+  @@index([author])
+  @@map("skills")
+}
+
+model UserSkill {
+  id        String   @id @default(cuid())
+  userId    String
+  skillId   String
+  skill     Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, skillId])
+  @@map("user_skills")
+}
+
+model McpServer {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  transport   String   @default("stdio") // stdio | sse | streamable
+  command     String?  // stdio 传输的命令
+  url         String?  // SSE/streamable 传输的 URL
+  env         Json?    // 环境变量
+  isEnabled   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+  @@unique([tenantId, name]) // 同一租户下不允许同名服务器重复添加
+  @@map("mcp_servers")
+}

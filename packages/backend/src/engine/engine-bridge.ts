@@ -1,37 +1,174 @@
-import type { IEngineAdapter } from "@nzi/shared-types";
-import { PiAdapter } from "./pi-adapter.js";
-import { GrokAdapter } from "./grok-adapter.js";
+/**
+ * T003.3 — Engine Bridge
+ *
+ * 职责：统一调度入口，将 streamPrompt 调用路由到正确的 Adapter + Normalizer 组合。
+ *
+ * 设计：
+ * - 维护一个 Adapter 注册表（由 initializeAdapters 注册）
+ * - 提供 routePrompt(provider, options) → 根据 provider 选取 Adapter，
+ *   Adapter 内部自行使用对应的 Normalizer（通过依赖注入）
+ * - provideEngine(provider, adapter) — 允许外部注入自定义 adapter（测试/扩展）
+ */
+
+import type { IEngineAdapter, PromptOptions, NZiAgentEvent } from "@nzi/shared-types";
+import { EngineProvider } from "@nzi/shared-types";
+import { BailianAdapter } from "./adapters/bailian-adapter.js";
+import { GrokAdapter } from "./adapters/grok-adapter.js";
+import { MockEngineAdapter } from "./adapters/mock-adapter.js";
+
+// ─── 注册表 ───────────────────────────────────────────────────────
+
+const registry = new Map<string, IEngineAdapter>();
 
 /**
- * T003.3 — Engine Bridge 骨架
- *
- * 职责：统一调度入口
- *   provider: "PI"  → piAdapter.streamPrompt()
- *   provider: "GROK" → grokAdapter.streamPrompt()
+ * 注册一个 Adapter（通常由 initializeAdapters 批量调用）
  */
-const adapters = new Map<string, IEngineAdapter>();
-
-export function registerPiAdapter(adapter: IEngineAdapter): void {
-  adapters.set("PI", adapter);
+export async function registerAdapter(adapter: IEngineAdapter): Promise<void> {
+  if (registry.has(adapter.name)) {
+    throw new Error(`Adapter "${adapter.name}" is already registered`);
+  }
+  await adapter.initialize();
+  registry.set(adapter.name, adapter);
 }
 
-export function registerGrokAdapter(adapter: IEngineAdapter): void {
-  adapters.set("GROK", adapter);
-}
-
-export function getAdapter(provider: string): IEngineAdapter {
-  const adapter = adapters.get(provider);
+/**
+ * 获取已注册的 Adapter
+ */
+export function getAdapter(name: string): IEngineAdapter {
+  const adapter = registry.get(name);
   if (!adapter) {
-    throw new Error(`No adapter registered for provider: ${provider}`);
+    throw new Error(`No adapter registered for provider: ${name}`);
   }
   return adapter;
 }
 
-export async function initializeEngine(adapters: IEngineAdapter[]): Promise<void> {
-  for (const adapter of adapters) {
-    await adapter.initialize();
+/**
+ * 获取所有已注册的 Adapter
+ */
+export function getAllAdapters(): IEngineAdapter[] {
+  return Array.from(registry.values());
+}
+
+/**
+ * 初始化默认 Adapters
+ *
+ * 行为：
+ * - 如果配置了 BAILIAN_API_KEY，注册 BailianAdapter（PI）和 GrokAdapter（GROK）
+ *   两者共用百炼 API Key 和端点，但使用不同模型（PI=BAILIAN_MODEL，GROK=GROK_MODEL）
+ * - 否则注册 MockEngineAdapter 作为 PI 和 GROK 的兜底（UI 切换引擎时不会报错）
+ */
+export async function initializeAdapters(
+  extraAdapters: IEngineAdapter[] = [],
+): Promise<void> {
+  const hasBailianKey = !!process.env.BAILIAN_API_KEY;
+
+  if (hasBailianKey) {
+    try {
+      await registerAdapter(new BailianAdapter());
+      console.log(`[engine] ✓ BailianAdapter registered (PI)`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[engine] BailianAdapter unavailable: ${msg}`);
+    }
+
+    try {
+      await registerAdapter(new GrokAdapter());
+      console.log(`[engine] ✓ GrokAdapter registered (GROK)`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[engine] GrokAdapter unavailable: ${msg}`);
+    }
+  } else {
+    console.warn(`[engine] BAILIAN_API_KEY not set — registering MockAdapter as PI+GROK fallback`);
+    try {
+      await registerAdapter(new MockEngineAdapter(EngineProvider.PI));
+      console.log(`[engine] ✓ MockAdapter registered (PI fallback)`);
+    } catch {
+      // mock 永远可用，不应该到达这里
+    }
+    try {
+      await registerAdapter(new MockEngineAdapter(EngineProvider.GROK));
+      console.log(`[engine] ✓ MockAdapter registered (GROK fallback)`);
+    } catch {
+      // mock 永远可用，不应该到达这里
+    }
+  }
+
+  for (const adapter of extraAdapters) {
+    try {
+      await registerAdapter(adapter);
+    } catch (err) {
+      console.warn(`[engine] Failed to initialize extra ${adapter.name}:`, err);
+    }
   }
 }
 
-// Phase 1 默认：只注册 Pi Adapter
-export const defaultAdapters: IEngineAdapter[] = [new PiAdapter()];
+// ─── 路由调度 ─────────────────────────────────────────────────────
+
+/**
+ * 根据 provider 路由 prompt 请求到对应的 Adapter。
+ *
+ * 这是 Engine Bridge 的核心入口：
+ *   const events = await routePrompt("PI", { sessionId, content, ... });
+ *   for await (const event of events) { ... }
+ *
+ * 未来新增引擎时，只需实现 IEngineAdapter 并注册：
+ *   await registerAdapter(new MyAdapter());
+ *   // routePrompt(MyAdapter.name, ...) 自动路由
+ */
+export async function* routePrompt(
+  provider: string,
+  baseOptions: Omit<PromptOptions, "content"> & { content: string },
+): AsyncIterable<NZiAgentEvent> {
+  const adapter = getAdapter(provider);
+  const options: PromptOptions = {
+    ...baseOptions,
+    content: baseOptions.content,
+  };
+
+  // 委托给 Adapter 的 streamPrompt
+  // Adapter 内部使用对应的 Normalizer 进行事件转换
+  yield* adapter.streamPrompt(options);
+}
+
+/**
+ * 便捷方法：使用 EngineProvider 枚举路由
+ */
+export async function* routePromptByProvider(
+  provider: EngineProvider,
+  baseOptions: Omit<PromptOptions, "content"> & { content: string },
+): AsyncIterable<NZiAgentEvent> {
+  yield* routePrompt(provider, baseOptions);
+}
+
+/**
+ * 中断指定 provider 下正在进行的 prompt 请求。
+ *
+ * 委托给 Adapter 的 abort(sessionId, requestId)。Adapter 未实现 abort 或
+ * 找不到对应请求时静默忽略（幂等）。
+ */
+export async function abortPrompt(
+  provider: string,
+  sessionId: string,
+  requestId: string,
+): Promise<void> {
+  const adapter = registry.get(provider);
+  if (!adapter?.abort) return; // 未实现 abort（如 Mock）—— 由调用方的 AbortController 兜底
+  try {
+    await adapter.abort(sessionId, requestId);
+  } catch {
+    // abort 失败不向上传播；调用方仍会走中断落库路径
+  }
+}
+
+// ─── 健康检查 ─────────────────────────────────────────────────────
+
+export async function checkAllEngines(): Promise<Map<string, { healthy: boolean; latencyMs: number; detail?: string }>> {
+  const results = new Map();
+  for (const [name, adapter] of registry) {
+    if (adapter.healthCheck) {
+      results.set(name, await adapter.healthCheck());
+    }
+  }
+  return results;
+}

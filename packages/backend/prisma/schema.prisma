@@ -1,0 +1,232 @@
+// Prisma Schema for NZi Agent Web
+// Phase 1: Core tables (User, Tenant, Session, Message, AgentEvent)
+// Phase 2 placeholders: SessionNode, ArenaMatch, ArenaVote
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── User & Multi-Tenancy ──────────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  displayName  String?
+  avatarUrl    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  memberships TenantMember[]
+  sessions    Session[]
+
+  @@map("users")
+}
+
+model Tenant {
+  id           String    @id @default(cuid())
+  name         String
+  slug         String    @unique
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  members    TenantMember[]
+  sessions   Session[]
+  engineConfigs EngineConfig[]
+  settings   Json?
+
+  @@map("tenants")
+}
+
+model TenantMember {
+  id        String       @id @default(cuid())
+  userId    String
+  tenantId  String
+  role      TenantRole   @default(MEMBER)
+  createdAt DateTime     @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@map("tenant_members")
+}
+
+enum TenantRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+// ─── Engine Configuration ──────────────────────────────────────────
+
+model EngineConfig {
+  id               String        @id @default(cuid())
+  tenantId         String
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider         EngineProvider // PI | GROK
+  apiKeyEncrypted  String?
+  apiKeyIv         String?
+  apiKeyTag        String?
+  model            String?
+  thinkingLevel    ThinkingLevel?
+  isEnabled        Boolean       @default(true)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@unique([tenantId, provider])
+  @@map("engine_configs")
+}
+
+enum EngineProvider {
+  PI
+  GROK
+}
+
+enum ThinkingLevel {
+  OFF
+  LOW
+  MEDIUM
+  HIGH
+}
+
+// ─── Session ───────────────────────────────────────────────────────
+
+model Session {
+  id              String        @id @default(cuid())
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String?
+  engine          EngineProvider @default(PI)
+  status          SessionStatus @default(ACTIVE)
+  parentSessionId String?
+  rootNodeId      String?
+  summary         String?
+  metadata        Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  messages    Message[]
+  events      AgentEvent[]
+
+  @@index([tenantId, createdAt])
+  @@index([userId, createdAt])
+  @@index([parentSessionId])
+  @@map("sessions")
+}
+
+enum SessionStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+// ─── Message ───────────────────────────────────────────────────────
+
+model Message {
+  id           String        @id @default(cuid())
+  sessionId    String
+  session      Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  rootEventId  String?
+  rootEvent    AgentEvent?   @relation("RootMessage", fields: [rootEventId], references: [id])
+  role         MessageRole
+  content      String
+  reasoning    String?
+  toolCalls    Json?
+  tokenUsage   Json?
+  latencyMs    Int?
+  status       MessageStatus @default(COMPLETED)
+  timelineNodes Json?
+  createdAt    DateTime      @default(now())
+
+  @@index([sessionId, createdAt])
+  @@map("messages")
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  TOOL_RESULT
+}
+
+enum MessageStatus {
+  COMPLETED
+  INTERRUPTED
+}
+
+// ─── AgentEvent (Core Event Stream) ────────────────────────────────
+
+model AgentEvent {
+  id            String       @id @default(cuid())
+  sessionId     String
+  session       Session      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  provider      EngineProvider
+  eventType     AgentEventType
+  parentEventId String?
+  parentEvent   AgentEvent?  @relation("EventTree", fields: [parentEventId], references: [id])
+  children      AgentEvent[] @relation("EventTree")
+  nodeId        String       @unique
+  isFork        Boolean      @default(false)
+  isArena       Boolean      @default(false)
+  content       String?
+  traceId       String
+  durationMs    Int?
+  tokenUsage    Json?
+  eventData     Json?
+  rootMessages  Message[]    @relation("RootMessage")
+  createdAt     DateTime     @default(now())
+
+  @@index([sessionId, createdAt])
+  @@index([sessionId, parentEventId])
+  @@index([traceId])
+  @@index([nodeId])
+  @@map("agent_events")
+}
+
+enum AgentEventType {
+  AGENT_START
+  AGENT_END
+  TURN_START
+  TURN_END
+  MESSAGE_START
+  MESSAGE_UPDATE
+  MESSAGE_END
+  TOOL_EXECUTION_START
+  TOOL_EXECUTION_UPDATE
+  TOOL_EXECUTION_END
+  COMPACTION_START
+  COMPACTION_END
+  ERROR
+}
+
+// ─── Session Node (Phase 2 placeholder) ────────────────────────────
+
+model SessionNode {
+  id        String   @id
+  sessionId String
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+  @@map("session_nodes")
+}
+
+// ─── Arena (Phase 2: Placeholder) ──────────────────────────────────
+//
+// model ArenaMatch {
+//   id        String   @id @default(cuid())
+//   tenantId  String
+//   ...
+// }
+//
+// model ArenaVote {
+//   id        String   @id @default(cuid())
+//   matchId   String
+//   ...
+// }

@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Loading...</title>
+<script>
+  // Run inline at top of head to set localStorage ASAP
+  (async () => {
+    try {
+      const r = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ email: 'admin@nzilab.com', password: 'Admin@2026!' })
+      });
+      const { user, token } = await r.json();
+      localStorage.setItem('nzi-auth', JSON.stringify({state: {user, token, isAuthenticated: true}, version: 0}));
+
+      const list = await fetch('/api/sessions', { headers: { 'Authorization': 'Bearer ' + token }});
+      const { sessions } = await list.json();
+      let target = sessions.find(s => s.engine === 'PI') || sessions[0];
+      if (!target) {
+        const s = await fetch('/api/sessions', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + token},
+          body: JSON.stringify({ title: 'T009 聊天流演示', engine: 'PI' })
+        });
+        target = await s.json();
+      }
+
+      // Stash the session ID so the next page can grab it
+      sessionStorage.setItem('nzi-demo-session', target.id);
+      // Use meta refresh — most reliable in headless
+      const meta = document.createElement('meta');
+      meta.httpEquiv = 'refresh';
+      meta.content = '0; url=/dashboard/session/' + target.id;
+      document.head.appendChild(meta);
+    } catch (err) {
+      document.body.innerText = 'Error: ' + (err.message || err);
+    }
+  })();
+</script>
+</head>
+<body>Loading demo…</body>
+</html>
