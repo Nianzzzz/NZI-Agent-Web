@@ -22,6 +22,7 @@
 import type { WebSocket } from "@fastify/websocket";
 import type { TokenPayload } from "../config/auth.config.js";
 import { SessionService } from "../services/session.service.js";
+import { SkillService } from "../services/skill.service.js";
 import { routePromptByProvider, abortPrompt } from "../engine/engine-bridge.js";
 import { EngineProvider } from "@nzi/shared-types";
 import type { TimelineNode } from "../ws/chat.types.js";
@@ -51,6 +52,7 @@ const RATE_LIMIT_MAX_STOP = 30;
 export class WsChatController {
   constructor(
     private sessionService: SessionService,
+    private skillService: SkillService | null,
     private verify: (token: string) => unknown,
   ) {}
 
@@ -287,7 +289,36 @@ export class WsChatController {
     // 供 BailianAdapter 等使用；PiAdapter 自行维护 session 历史，忽略此字段
     const historyMessages = await this._loadHistoryMessages(sessionId, user.tenantId);
 
+    // ─── Phase 3: 注入已安装的 Skill system prompt ──────────────────
+    let systemPrompt: string | undefined;
+    if (this.skillService) {
+      try {
+        const installedSkills = await this.skillService.getInstalled(user.sub);
+        const enabledSkills = installedSkills.filter((s) => s.isEnabled);
+        if (enabledSkills.length > 0) {
+          systemPrompt = enabledSkills
+            .map((s) => `## Skill: ${s.displayName}\n${s.prompt}`)
+            .join("\n\n");
+        }
+      } catch {
+        // Skill 注入失败不阻断主流程
+      }
+    }
+
     let finalDoneSent = false;
+
+    /**
+     * 在发送 done 之前，将所有仍 stuck in running 的节点标记为 done，
+     * 防止前端推理中 spinner 永远转圈。
+     * 某些引擎（如 Pi Agent）在 message_end 之后不再为每个节点单独发送 end 事件。
+     */
+    const finalizeAllRunningNodes = () => {
+      for (const node of nodes.values()) {
+        if (node.status === "running") {
+          node.status = "done";
+        }
+      }
+    };
 
     try {
       const eventIterator = routePromptByProvider(provider, {
@@ -298,6 +329,7 @@ export class WsChatController {
         context: {
           thinkingLevel: thinkingLevel as "off" | "low" | "medium" | "high",
           ...(workingDirectory ? { workingDirectory } : {}),
+          ...(systemPrompt ? { systemPrompt } : {}),
         },
         messages: historyMessages,
       } as never);
@@ -414,6 +446,7 @@ export class WsChatController {
           // 引擎声明本轮结束 — 落库 + 推 done
           if (!finalDoneSent && texts.length > 0) {
             finalDoneSent = true;
+            finalizeAllRunningNodes();
             const fullText = texts.join("");
             const finalNodes = Array.from(nodes.values());
             await this.sessionService.createMessage({
@@ -440,6 +473,7 @@ export class WsChatController {
       }
 
       if (!finalDoneSent && texts.length > 0) {
+        finalizeAllRunningNodes();
         const fullText = texts.join("");
         const finalNodes = Array.from(nodes.values());
         await this.sessionService.createMessage({
