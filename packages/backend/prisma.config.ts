@@ -1,12 +1,12 @@
 import { defineConfig } from "prisma/config";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { config as loadDotenv } from "dotenv";
 
-// Prisma CLI runs from the workspace root, so __dirname may be unexpected.
-// Hardcode the schema path to avoid resolution issues.
-const schemaPath = path.join(
-  fileURLToPath("file:///D:/AIcode/claude/NZI-Agent-Web/prisma/schema.prisma")
-);
+const here = path.dirname(fileURLToPath(import.meta.url));
+loadDotenv({ path: path.join(here, ".env") });
+
+const schemaPath = path.join(here, "..", "..", "prisma", "schema.prisma");
 
 export default defineConfig({
   schema: schemaPath,

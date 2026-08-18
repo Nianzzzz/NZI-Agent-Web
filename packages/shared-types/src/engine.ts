@@ -79,6 +79,14 @@ export interface PromptContext {
   systemPrompt?: string;
   /** 允许的工具列表 */
   allowedTools?: string[];
+  /** 工作目录（工具执行时的 cwd，默认 process.cwd()） */
+  workingDirectory?: string;
+}
+
+/** 多轮对话消息（OpenAI 格式，供 BailianAdapter 等使用） */
+export interface ChatCompletionMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
 }
 
 export interface PromptOptions {
@@ -92,6 +100,16 @@ export interface PromptOptions {
   tenantId: string;
   /** 上下文 */
   context?: PromptContext;
+  /**
+   * 本次请求的唯一 ID（由 WsChatController 生成）。
+   * 用于 Adapter 层注册 session → 支持 stop/abort 时按请求精确定位。
+   */
+  requestId: string;
+  /**
+   * 历史消息（多轮上下文，最近 N 条，由 Controller 组装后传入）。
+   * Adapter 可选使用（BailianAdapter 必用，PiAdapter 自行维护 session 历史）。
+   */
+  messages?: ChatCompletionMessage[];
 }
 
 // ─── Engine Health ────────────────────────────────────────────────
@@ -113,8 +131,8 @@ export interface IEngineAdapter {
   isAvailable(): Promise<boolean>;
   /** 发送 prompt 并流式返回事件 */
   streamPrompt(options: PromptOptions): AsyncIterable<NZiAgentEvent>;
-  /** 取消进行中的请求（可选） */
-  abort?(sessionId: string): Promise<void>;
+  /** 取消进行中的请求（可选）。sessionId 为 NZi 会话 ID，requestId 标识具体那次 prompt */
+  abort?(sessionId: string, requestId: string): Promise<void>;
   /** 健康检查（可选） */
   healthCheck?(): Promise<EngineHealth>;
 }

@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Auth redirect</title></head><body>
+<script>
+(async () => {
+  const r = await fetch('http://localhost:3002/api/auth/register', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      email: 'demo' + Date.now() + '@nzilab.com',
+      password: 'Demo123!',
+      displayName: 'Demo User'
+    })
+  });
+  const data = await r.json();
+  localStorage.setItem('nzi-auth', JSON.stringify({state: {user: data.user, token: data.token, isAuthenticated: true}, version: 0}));
+  window.location.href = '/dashboard';
+})();
+</script>
+<p>Logging in...</p>
+</body></html>

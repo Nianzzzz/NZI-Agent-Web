@@ -15,7 +15,7 @@ This repo is freshly initialized (git only, no application code yet). All techni
 - **Frontend**: Next.js 16 (App Router) + TypeScript + Tailwind CSS + React Flow + Monaco Editor
 - **Backend**: Node.js (Fastify) + Socket.io + BullMQ
 - **Database**: PostgreSQL (Prisma ORM) + Redis
-- **AI Engines**: Pi Agent SDK + Grok CLI Bridge
+- **AI Engines**: Pi Agent SDK (Bailian OpenAI-compatible API), Grok Agent (Bailian API + independent model), Mock fallback
 
 ## Planned Architecture
 
