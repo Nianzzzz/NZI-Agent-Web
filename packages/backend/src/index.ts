@@ -17,7 +17,7 @@ import multipart from "@fastify/multipart";
 import Redis from "ioredis";
 import { PrismaClient } from "@prisma/client";
 import { JWT_SECRET } from "./config/auth.config.js";
-import { authRoutes, sessionRoutes, engineRoutes, arenaRoutes, engineConfigRoutes } from "./routes/index.js";
+import { authRoutes, sessionRoutes, engineRoutes, arenaRoutes, engineConfigRoutes, webSearchRoutes, skillRoutes, mcpRoutes } from "./routes/index.js";
 import { wsChatRoutes } from "./routes/ws.route.js";
 import { initializeAdapters } from "./engine/engine-bridge.js";
 import { ArenaService } from "./services/arena.service.js";
@@ -164,7 +164,12 @@ fastify.get("/ready", async () => ({
   timestamp: new Date().toISOString(),
 }));
 
-// ─── Arena Service（共享单例：HTTP + WS 路由共用同一实例，持久化到 DB） ──
+// ─── Phase 3: 注入系统内置 Skill（幂等，首次启动时写入 DB） ───
+const skillService = new (await import("./services/skill.service.js")).SkillService(prisma);
+await skillService.seedSystemSkills().catch((e) => {
+  fastify.log.error({ err: e }, "[skill] seed failed");
+});
+fastify.decorate("skillService", skillService);
 const arenaService = new ArenaService(new SessionService(prisma), prisma);
 fastify.decorate("arenaService", arenaService);
 
@@ -184,6 +189,9 @@ fastify.register(async (instance) => {
   await instance.register(engineRoutes);
   await instance.register(arenaRoutes);
   await instance.register(engineConfigRoutes);
+  await instance.register(webSearchRoutes);
+  await instance.register(skillRoutes);
+  await instance.register(mcpRoutes);
 });
 
 // ─── WebSocket Routes ────────────────────────────────────────────

@@ -12,10 +12,16 @@ import { SessionController } from "../controllers/session.controller.js";
 import { ArenaController } from "../controllers/arena.controller.js";
 import { EngineConfigController } from "../controllers/engine-config.controller.js";
 import { FileController } from "../controllers/file.controller.js";
+import { WebSearchController } from "../controllers/web-search.controller.js";
+import { SkillController } from "../controllers/skill.controller.js";
+import { McpController } from "../controllers/mcp.controller.js";
 import { AuthService } from "../services/auth.service.js";
 import { SessionService } from "../services/session.service.js";
 import { ArenaService } from "../services/arena.service.js";
 import { EngineConfigService } from "../services/engine-config.service.js";
+import { WebSearchService } from "../services/web-search.service.js";
+import { SkillService } from "../services/skill.service.js";
+import { McpService } from "../services/mcp.service.js";
 
 // ─── 公有路由（无需 JWT） ─────────────────────────────────────────
 
@@ -129,6 +135,10 @@ const arenaRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/arena/:id/continue",
     async (req, reply) => controller.continueMatch(req as never, reply as never),
   );
+  fastify.delete<{ Params: { id: string } }>(
+    "/api/arena/:id",
+    async (req, reply) => controller.delete(req as never, reply as never),
+  );
 };
 
 // ─── 引擎配置路由（需 JWT） ──────────────────────────────────────
@@ -149,6 +159,51 @@ const engineConfigRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/engine-config/:provider",
     async (req, reply) => controller.remove(req as never, reply as never),
   );
+};
+
+// ─── Phase 3: Web Search 路由（需 JWT） ───────────────────────────────
+
+const webSearchRoutes: FastifyPluginAsync = async (fastify) => {
+  const service = new WebSearchService(fastify.prisma);
+  const controller = new WebSearchController(service);
+
+  fastify.get("/api/web-search/config", async (req, reply) => controller.getConfig(req as never, reply as never));
+  fastify.put("/api/web-search/config", async (req, reply) => controller.upsertConfig(req as never, reply as never));
+  fastify.post("/api/web-search/search", async (req, reply) => controller.search(req as never, reply as never));
+};
+
+// ─── Phase 3: Skill 市场路由（需 JWT） ─────────────────────────────────
+
+const skillRoutes: FastifyPluginAsync = async (fastify) => {
+  const service = new SkillService(fastify.prisma);
+  const controller = new SkillController(service);
+
+  fastify.get("/api/skills", async (req, reply) => controller.list(req as never, reply as never));
+  fastify.get("/api/user/skills", async (req, reply) => controller.getInstalled(req as never, reply as never));
+  fastify.get<{ Params: { id: string } }>("/api/skills/:id", async (req, reply) => controller.get(req as never, reply as never));
+  fastify.post("/api/skills", async (req, reply) => controller.create(req as never, reply as never));
+  fastify.put<{ Params: { id: string } }>("/api/skills/:id", async (req, reply) => controller.update(req as never, reply as never));
+  fastify.delete<{ Params: { id: string } }>("/api/skills/:id", async (req, reply) => controller.delete(req as never, reply as never));
+  fastify.post<{ Params: { id: string } }>("/api/skills/:id/install", async (req, reply) => controller.install(req as never, reply as never));
+  fastify.post<{ Params: { id: string } }>("/api/skills/:id/uninstall", async (req, reply) => controller.uninstall(req as never, reply as never));
+  fastify.put<{ Params: { id: string } }>("/api/skills/:id/toggle", async (req, reply) => controller.toggle(req as never, reply as never));
+};
+
+// ─── Phase 3: MCP 路由（需 JWT） ──────────────────────────────────────
+
+const mcpRoutes: FastifyPluginAsync = async (fastify) => {
+  const service = new McpService(fastify.prisma);
+  const controller = new McpController(service);
+
+  fastify.get("/api/mcp/servers", async (req, reply) => controller.list(req as never, reply as never));
+  fastify.get("/api/mcp/presets", async (req, reply) => controller.getPresets(req as never, reply as never));
+  fastify.get<{ Params: { id: string } }>("/api/mcp/servers/:id", async (req, reply) => controller.get(req as never, reply as never));
+  fastify.get<{ Params: { id: string } }>("/api/mcp/servers/:id/tools", async (req, reply) => controller.getTools(req as never, reply as never));
+  fastify.post("/api/mcp/servers", async (req, reply) => controller.create(req as never, reply as never));
+  fastify.put<{ Params: { id: string } }>("/api/mcp/servers/:id", async (req, reply) => controller.update(req as never, reply as never));
+  fastify.delete<{ Params: { id: string } }>("/api/mcp/servers/:id", async (req, reply) => controller.delete(req as never, reply as never));
+  fastify.post<{ Params: { id: string } }>("/api/mcp/servers/:id/connect", async (req, reply) => controller.connect(req as never, reply as never));
+  fastify.post<{ Params: { id: string } }>("/api/mcp/servers/:id/disconnect", async (req, reply) => controller.disconnect(req as never, reply as never));
 };
 
 // ─── 诊断路由（无需 JWT） ─────────────────────────────────────────
@@ -180,4 +235,4 @@ const engineRoutes: FastifyPluginAsync = async (fastify) => {
   });
 };
 
-export { authRoutes, sessionRoutes, engineRoutes, arenaRoutes, engineConfigRoutes };
+export { authRoutes, sessionRoutes, engineRoutes, arenaRoutes, engineConfigRoutes, webSearchRoutes, skillRoutes, mcpRoutes };

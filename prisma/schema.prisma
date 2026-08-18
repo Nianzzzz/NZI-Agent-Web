@@ -258,16 +258,77 @@ model SessionNode {
   @@map("session_nodes")
 }
 
-// ─── Arena (Phase 2: Placeholder) ──────────────────────────────────
-//
-// model ArenaMatch {
-//   id        String   @id @default(cuid())
-//   tenantId  String
-//   ...
-// }
-//
-// model ArenaVote {
-//   id        String   @id @default(cuid())
-//   matchId   String
-//   ...
-// }
+// ─── Phase 3: Web Search, Skills, MCP ────────────────────────────────
+
+model WebSearchConfig {
+  id          String   @id @default(cuid())
+  tenantId    String
+  provider    String   @default("duckduckgo") // duckduckgo | serpapi
+  apiKey      String?  // AES-256-GCM encrypted
+  apiKeyIv    String?
+  apiKeyTag   String?
+  maxResults  Int      @default(5)
+  isEnabled   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, provider])
+  @@map("web_search_configs")
+}
+
+model Skill {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  displayName String
+  description String
+  category    String   @default("custom") // coding | writing | analysis | devops | custom
+  version     String   @default("1.0.0")
+  author      String
+  authorType  String   @default("system") // system | community | user
+  icon        String   @default("sparkles")
+  tags        Json     @default("[]")
+  prompt      String   // 核心：注入到 system prompt 的指令
+  tools       Json     @default("[]") // 允许的工具列表
+  downloads   Int      @default(0)
+  rating      Float    @default(0)
+  isPublic    Boolean  @default(true)
+  tenantId    String?  // 用户自定义 skill 的归属租户
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userSkills  UserSkill[]
+
+  @@index([category])
+  @@index([author])
+  @@map("skills")
+}
+
+model UserSkill {
+  id        String   @id @default(cuid())
+  userId    String
+  skillId   String
+  skill     Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, skillId])
+  @@map("user_skills")
+}
+
+model McpServer {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  transport   String   @default("stdio") // stdio | sse | streamable
+  command     String?  // stdio 传输的命令
+  url         String?  // SSE/streamable 传输的 URL
+  env         Json?    // 环境变量
+  isEnabled   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+  @@unique([tenantId, name]) // 同一租户下不允许同名服务器重复添加
+  @@map("mcp_servers")
+}
