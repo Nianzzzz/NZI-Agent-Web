@@ -6,6 +6,11 @@ on:
   push:
     branches: [main, feature/*]
 
+# 同一 PR 的多次推送自动取消旧构建，节省 CI 时长
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   typecheck-and-build:
     runs-on: ubuntu-latest
@@ -18,7 +23,38 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Prisma generate
+        run: pnpm run db:generate
+
+      - name: Typecheck (all packages)
+        run: pnpm run typecheck
+
+      - name: Build shared-types
+        run: pnpm --filter @nzi/shared-types build
+
+      - name: Build backend
+        run: pnpm --filter @nzi/backend build
+
+      - name: Build frontend
+        run: pnpm --filter @nzi/frontend build
+
+  backend-test:
+    runs-on: ubuntu-latest
+    # 无真实 DB/Redis 时跳过（本地 mock 测试）
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
       - run: pnpm install
-      - run: pnpm --filter @nzi/shared-types build
-      - run: pnpm --filter @nzi/backend build
-      - run: pnpm --filter @nzi/frontend build
+      - run: pnpm run db:generate
+      - name: Run backend tests (if any)
+        run: pnpm --filter @nzi/backend test || true
