@@ -27,19 +27,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Prisma generate
-        run: pnpm run db:generate
-
-      - name: Typecheck (all packages)
-        run: pnpm run typecheck
-
-      - name: Build shared-types
+      - name: Build shared-types (生成 dist，供后端 path mapping 解析)
         run: pnpm --filter @nzi/shared-types build
 
-      - name: Build backend
+      - name: Prisma generate (生成 PrismaClient 类型)
+        run: pnpm --filter @nzi/backend generate
+
+      - name: Typecheck & Build backend (tsc 同时承担类型检查 + 编译)
         run: pnpm --filter @nzi/backend build
 
-      - name: Build frontend
+      - name: Typecheck & Build frontend (next build 包含类型检查)
         run: pnpm --filter @nzi/frontend build
 
   backend-test:
@@ -55,6 +52,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install
-      - run: pnpm run db:generate
+      - run: pnpm --filter @nzi/backend generate
       - name: Run backend tests (if any)
         run: pnpm --filter @nzi/backend test || true
