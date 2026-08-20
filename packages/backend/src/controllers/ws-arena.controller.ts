@@ -248,6 +248,23 @@ export class WsArenaController {
 
         if (eventType === "error") {
           finalDoneSent = true;
+          // 保存已流式输出的部分内容（状态标记为 INTERRUPTED），避免引擎报错时数据丢失
+          if (ctx.texts.length > 0) {
+            const partialText = ctx.texts.join("");
+            const partialNodes = Array.from(ctx.nodes.values()).map((n) =>
+              n.status === "running" ? { ...n, status: "done" as const } : n,
+            );
+            await this.sessionService.createMessage({
+              id: requestId,
+              sessionId: sideInfo.sessionId,
+              role: "ASSISTANT",
+              content: partialText + "\n\n[生成出错 — 模型可能已过期或不可用]",
+              status: "INTERRUPTED",
+              latencyMs: Date.now() - startTime,
+              timelineNodes: partialNodes,
+              arenaSide: side,
+            });
+          }
           this.sendSocket(socket, {
             type: "error",
             payload: { requestId, message: event.content ?? "Engine error" },

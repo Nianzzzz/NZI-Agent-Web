@@ -267,7 +267,7 @@ export default function ArenaPage() {
   const sideB = sides.B;
 
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30">
+    <div className="flex h-screen flex-col bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30">
       {/* ── 顶栏 ── */}
       <header className="shrink-0 border-b border-slate-200/60 bg-white/70 backdrop-blur-md dark:border-slate-800/60 dark:bg-slate-950/70">
         <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4">
@@ -301,8 +301,8 @@ export default function ArenaPage() {
         </div>
       </header>
 
-      {/* ── 主内容：双栏 ── */}
-      <main className="relative flex-1 overflow-hidden">
+      {/* ── 主内容：双栏（独立滚动） ── */}
+      <main className="relative flex-1 min-h-0 overflow-hidden">
         {/* 生成中且尚无内容时，顶部显示提示词横幅 */}
         {isGenerating && currentPrompt && sides.A.content === "" && sides.B.content === "" && (
           <div className="pointer-events-none fixed left-1/2 top-3 z-20 flex w-full max-w-3xl -translate-x-1/2 items-center gap-3 rounded-xl border border-blue-200 bg-white/95 px-4 py-3 text-sm text-slate-700 shadow-lg backdrop-blur dark:border-blue-900/40 dark:bg-slate-900/90 dark:text-slate-200">
@@ -321,7 +321,7 @@ export default function ArenaPage() {
             </span>
           </div>
         )}
-        <div className="mx-auto flex h-full max-w-7xl gap-3 px-4 py-3">
+        <div className="mx-auto flex h-full min-h-0 max-w-7xl gap-3 px-4 py-3">
           {/* Side A */}
           <ArenaPanel
             label="A"
