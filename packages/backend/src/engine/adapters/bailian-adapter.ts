@@ -109,7 +109,6 @@ export class BailianAdapter implements IEngineAdapter {
           model,
           messages,
           stream: true,
-          stream_options: { include_usage: true },
           tools: toolsEnabled ? (toolDefs as never) : undefined,
           // thinking level 映射：off → 不启用推理，其他 → 启用 reasoning
           ...(options.context?.thinkingLevel && options.context.thinkingLevel !== "off"

@@ -307,24 +307,21 @@ function MatchRow({ match, deleting, onRemove }: {
           : "tie";
 
   return (
-    <div className="group relative flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/60">
-      {/* 点击跳转会话详情（删除按钮除外） */}
-      <Link
-        href={`/dashboard/session/${match.sessionId}`}
-        className="absolute inset-0 z-0 rounded-xl"
-        title="查看对战会话"
-      />
-
+    <Link
+      href={`/dashboard/session/${match.sessionId}`}
+      className="group relative flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/60"
+      title="查看对战会话"
+    >
       {/* 左侧：引擎色条 */}
       <div className={cn(
-        "relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-white shadow-sm",
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-white shadow-sm",
         "from-violet-500 to-fuchsia-600",
       )}>
         <Vote className="h-4 w-4" />
       </div>
 
       {/* 中间：prompt + 投票条 */}
-      <div className="relative z-10 min-w-0 flex-1">
+      <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-foreground">{match.prompt}</p>
         <div className="mt-1.5 flex items-center gap-2">
           {/* 投票进度条 */}
@@ -351,7 +348,7 @@ function MatchRow({ match, deleting, onRemove }: {
       </div>
 
       {/* 右侧：状态 + 时间 + 结果 */}
-      <div className="relative z-10 flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         {match.status === "completed" && winner && (
           <span className={cn(
             "rounded-full px-2 py-0.5 text-[10px] font-semibold",
@@ -373,10 +370,10 @@ function MatchRow({ match, deleting, onRemove }: {
         <span className="text-[10px] text-slate-400">{timeStr}</span>
         <ChevronRight className="h-4 w-4 text-slate-300 opacity-0 transition-opacity group-hover:opacity-100" />
 
-        {/* 删除按钮（hover 显示） */}
+        {/* 删除按钮（hover 显示，阻止冒泡避免跳转） */}
         <button
           type="button"
-          onClick={(e) => { e.preventDefault(); onRemove(match.matchId); }}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(match.matchId); }}
           disabled={deleting}
           className="ml-1 rounded p-1 text-slate-300 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 disabled:opacity-50"
           title="删除对战记录"
@@ -388,6 +385,6 @@ function MatchRow({ match, deleting, onRemove }: {
           )}
         </button>
       </div>
-    </div>
+    </Link>
   );
 }
