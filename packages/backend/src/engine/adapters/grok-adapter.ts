@@ -93,7 +93,6 @@ export class GrokAdapter implements IEngineAdapter {
         model,
         messages,
         stream: true,
-        stream_options: { include_usage: true },
         ...(options.context?.thinkingLevel && options.context.thinkingLevel !== "off"
           ? { extra_body: { enable_thinking: true } }
           : {}),

@@ -46,22 +46,21 @@ const MODELS: ModelInfo[] = [
   { id: "qwen3.7-plus", name: "Qwen3.7-Plus", quota: 1_000_000, expiresAt: "2026-09-01", badge: "均衡", badgeColor: "blue" },
   { id: "qwen3.7-flash", name: "Qwen3.7-Flash", quota: 1_000_000, expiresAt: "2026-10-23", badge: "快速", badgeColor: "violet" },
   { id: "qwen3.8-27b", name: "Qwen3.8-27B", quota: 1_000_000, expiresAt: "2026-11-18", badge: "开源", badgeColor: "amber" },
-  { id: "qwen3.7-flash-2026-07-15", name: "Qwen3.7-Flash (0715)", quota: 1_000_000, expiresAt: "2026-10-23" },
-  { id: "qwen3.5-ocr", name: "Qwen3.5-OCR", quota: 1_000_000, expiresAt: "2026-09-14" },
-  { id: "qwen3.7-max-2026-06-08", name: "Qwen3.7-Max (0608)", quota: 1_000_000, expiresAt: "2026-09-08" },
-  { id: "qwen3.7-max-2026-05-17", name: "Qwen3.7-Max (0517)", quota: 1_000_000, expiresAt: "2026-08-24" },
-  { id: "qwen3.7-plus-2026-05-26", name: "Qwen3.7-Plus (0526)", quota: 979_568, expiresAt: "2026-09-01" },
   { id: "qwen3.8-2.4t-a95b", name: "Qwen3.8-2.4T-A95B", quota: 1_000_000, expiresAt: "2026-11-12" },
+  { id: "deepseek-v4-pro-0813", name: "DeepSeek-V4-Pro", quota: 1_000_000, expiresAt: "2026-11-13", badge: "推荐", badgeColor: "emerald" },
   { id: "deepseek-v4-flash-0731", name: "DeepSeek-V4-Flash", quota: 1_000_000, expiresAt: "2026-10-31" },
-  { id: "deepseek-v4-pro-0813", name: "DeepSeek-V4-Pro", quota: 1_000_000, expiresAt: "2026-11-13" },
+  { id: "qwen3.7-flash-2026-07-15", name: "Qwen3.7-Flash (0715)", quota: 1_000_000, expiresAt: "2026-10-23" },
+  { id: "qwen3.7-max-2026-06-08", name: "Qwen3.7-Max (0608)", quota: 1_000_000, expiresAt: "2026-09-08" },
+  { id: "qwen3.7-plus-2026-05-26", name: "Qwen3.7-Plus (0526)", quota: 979_568, expiresAt: "2026-09-01" },
   { id: "kimi-k2.7-code", name: "Kimi-K2.7-Code", quota: 1_000_000, expiresAt: "2026-09-14" },
   { id: "glm-5.2", name: "GLM-5.2", quota: 1_000_000, expiresAt: "2026-09-15" },
+  { id: "qwen3.7-max-2026-05-17", name: "Qwen3.7-Max (0517) ⚠️额度已尽", quota: 1_000_000, expiresAt: "2026-08-24", badge: "已过期", badgeColor: "red" },
 ];
 
-// ⚠️ 已过期模型（2026/08/24 到期）—— 展示在列表底部供参考
+// ⚠️ 免费额度已于 2026/08/24 到期，但模型仍可用（走付费额度）
 const EXPIRED_MODELS: ModelInfo[] = [
-  { id: "qwen3.7-max-2026-05-20", name: "Qwen3.7-Max (0520) ⚠️已过期", quota: 1_000_000, expiresAt: "2026-08-24", badge: "已过期", badgeColor: "red" },
-  { id: "qwen3.7-max-preview", name: "Qwen3.7-Max-Preview ⚠️已过期", quota: 994_354, expiresAt: "2026-08-24", badge: "已过期", badgeColor: "red" },
+  { id: "qwen3.7-max-2026-05-20", name: "Qwen3.7-Max (0520)", quota: 1_000_000, expiresAt: "2026-08-24", badge: "已过期", badgeColor: "red" },
+  { id: "qwen3.7-max-preview", name: "Qwen3.7-Max-Preview", quota: 994_354, expiresAt: "2026-08-24", badge: "已过期", badgeColor: "red" },
 ];
 
 const THINKING_LEVELS: { value: "off" | "low" | "medium" | "high"; label: string; desc: string; icon: typeof Brain }[] = [
