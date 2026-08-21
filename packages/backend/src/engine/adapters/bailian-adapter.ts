@@ -69,7 +69,7 @@ export class BailianAdapter implements IEngineAdapter {
     const traceId = crypto.randomUUID();
     const agentNodeId = `bailian_${crypto.randomUUID()}`;
     const startTime = Date.now();
-    const model = process.env.BAILIAN_MODEL ?? DEFAULT_MODEL;
+    const model = options.context?.model ?? process.env.BAILIAN_MODEL ?? DEFAULT_MODEL;
     const workingDirectory = options.context?.workingDirectory ?? process.cwd();
 
     // ─── AGENT_START ───────────────────────────────────────────

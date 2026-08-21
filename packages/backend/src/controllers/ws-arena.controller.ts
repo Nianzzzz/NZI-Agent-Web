@@ -16,6 +16,7 @@ import type { TimelineNode } from "../ws/chat.types.js";
 import { validateClientMessage } from "../ws/chat.types.js";
 import type { ServerMessage } from "../ws/chat.types.js";
 import { SessionService } from "../services/session.service.js";
+import { EngineConfigService } from "../services/engine-config.service.js";
 
 interface ArenaSideRequestCtx {
   abortController: AbortController;
@@ -30,6 +31,7 @@ export class WsArenaController {
     private arenaService: ArenaService,
     private sessionService: SessionService,
     private verify: (token: string) => unknown,
+    private engineConfigService?: EngineConfigService,
   ) {}
 
   wsHandler(
@@ -155,12 +157,30 @@ export class WsArenaController {
     const provider = sideInfo.provider;
     const historyMessages = await this._loadHistoryMessages(sideInfo.sessionId, user.tenantId);
 
+    // 租户级模型配置：优先使用用户在引擎配置页设置的模型，否则降级到 .env
+    let resolvedModel: string | undefined;
+    if (this.engineConfigService) {
+      try {
+        const providerKey = provider === EngineProvider.PI ? "PI" : "GROK";
+        const cfg = (await this.engineConfigService.getConfig(
+          user.tenantId,
+          providerKey as "PI" | "GROK",
+        )) as { model?: string | null } | null;
+        if (cfg?.model) resolvedModel = cfg.model;
+      } catch {
+        // 降级到 .env
+      }
+    }
+
     const eventIterator = routePromptByProvider(provider, {
       sessionId: sideInfo.sessionId,
       content: match.prompt,
       tenantId: user.tenantId ?? "",
       requestId,
-      context: { thinkingLevel: match.thinkingLevel },
+      context: {
+        ...(resolvedModel ? { model: resolvedModel } : {}),
+        thinkingLevel: match.thinkingLevel,
+      },
       messages: historyMessages,
     } as never);
 

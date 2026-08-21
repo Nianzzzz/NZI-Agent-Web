@@ -66,7 +66,7 @@ export class GrokAdapter implements IEngineAdapter {
     const traceId = crypto.randomUUID();
     const nodeId = `grok_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const startTime = Date.now();
-    const model = process.env.GROK_MODEL ?? DEFAULT_MODEL;
+    const model = options.context?.model ?? process.env.GROK_MODEL ?? DEFAULT_MODEL;
 
     // ─── AGENT_START ───────────────────────────────────────────
     yield {

@@ -54,6 +54,7 @@ export class WsChatController {
     private sessionService: SessionService,
     private skillService: SkillService | null,
     private verify: (token: string) => unknown,
+    private engineConfigService?: import("../services/engine-config.service.js").EngineConfigService,
   ) {}
 
   /**
@@ -320,6 +321,20 @@ export class WsChatController {
       }
     };
 
+    // ─── 租户级模型配置：优先使用用户在引擎配置页设置的模型，否则降级到 .env ──
+    let resolvedModel: string | undefined;
+    if (this.engineConfigService) {
+      try {
+        const cfg = (await this.engineConfigService.getConfig(
+          user.tenantId,
+          agentType ?? "PI",
+        )) as { model?: string | null } | null;
+        if (cfg?.model) resolvedModel = cfg.model;
+      } catch {
+        // 降级到 .env
+      }
+    }
+
     try {
       const eventIterator = routePromptByProvider(provider, {
         sessionId,
@@ -327,6 +342,7 @@ export class WsChatController {
         tenantId: user.tenantId ?? "",
         requestId,
         context: {
+          ...(resolvedModel ? { model: resolvedModel } : {}),
           thinkingLevel: thinkingLevel as "off" | "low" | "medium" | "high",
           ...(workingDirectory ? { workingDirectory } : {}),
           ...(systemPrompt ? { systemPrompt } : {}),
