@@ -16,6 +16,7 @@ import type { TimelineNode } from "../ws/chat.types.js";
 import { validateClientMessage } from "../ws/chat.types.js";
 import type { ServerMessage } from "../ws/chat.types.js";
 import { SessionService } from "../services/session.service.js";
+import { EngineConfigService } from "../services/engine-config.service.js";
 
 interface ArenaSideRequestCtx {
   abortController: AbortController;
@@ -30,6 +31,7 @@ export class WsArenaController {
     private arenaService: ArenaService,
     private sessionService: SessionService,
     private verify: (token: string) => unknown,
+    private engineConfigService?: EngineConfigService,
   ) {}
 
   wsHandler(
@@ -155,12 +157,30 @@ export class WsArenaController {
     const provider = sideInfo.provider;
     const historyMessages = await this._loadHistoryMessages(sideInfo.sessionId, user.tenantId);
 
+    // 租户级模型配置：优先使用用户在引擎配置页设置的模型，否则降级到 .env
+    let resolvedModel: string | undefined;
+    if (this.engineConfigService) {
+      try {
+        const providerKey = provider === EngineProvider.PI ? "PI" : "GROK";
+        const cfg = (await this.engineConfigService.getConfig(
+          user.tenantId,
+          providerKey as "PI" | "GROK",
+        )) as { model?: string | null } | null;
+        if (cfg?.model) resolvedModel = cfg.model;
+      } catch {
+        // 降级到 .env
+      }
+    }
+
     const eventIterator = routePromptByProvider(provider, {
       sessionId: sideInfo.sessionId,
       content: match.prompt,
       tenantId: user.tenantId ?? "",
       requestId,
-      context: { thinkingLevel: match.thinkingLevel },
+      context: {
+        ...(resolvedModel ? { model: resolvedModel } : {}),
+        thinkingLevel: match.thinkingLevel,
+      },
       messages: historyMessages,
     } as never);
 
@@ -248,6 +268,23 @@ export class WsArenaController {
 
         if (eventType === "error") {
           finalDoneSent = true;
+          // 保存已流式输出的部分内容（状态标记为 INTERRUPTED），避免引擎报错时数据丢失
+          if (ctx.texts.length > 0) {
+            const partialText = ctx.texts.join("");
+            const partialNodes = Array.from(ctx.nodes.values()).map((n) =>
+              n.status === "running" ? { ...n, status: "done" as const } : n,
+            );
+            await this.sessionService.createMessage({
+              id: requestId,
+              sessionId: sideInfo.sessionId,
+              role: "ASSISTANT",
+              content: partialText + "\n\n[生成出错 — 模型可能已过期或不可用]",
+              status: "INTERRUPTED",
+              latencyMs: Date.now() - startTime,
+              timelineNodes: partialNodes,
+              arenaSide: side,
+            });
+          }
           this.sendSocket(socket, {
             type: "error",
             payload: { requestId, message: event.content ?? "Engine error" },

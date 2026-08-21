@@ -407,18 +407,25 @@ function groupArenaRounds(messages: ChatMessage[], streaming: ChatMessage | null
       const prev = rounds[rounds.length - 1]?.prompt;
       if (prev && prev.content.trim() === normalized) continue;
       rounds.push({ roundIndex: rounds.length, prompt: m, sideA: null, sideB: null });
-    } else if (m.arenaSide === "A") {
+    } else if (m.arenaSide === "A" || m.arenaSide === "B") {
+      // 若当前没有 user 消息作为 round 锚点（user 提问未写库），自动补一个空 prompt 轮
+      if (rounds.length === 0 || (!rounds[rounds.length - 1].prompt && !rounds[rounds.length - 1].sideA && !rounds[rounds.length - 1].sideB)) {
+        if (rounds.length === 0 || (!rounds[rounds.length - 1].sideA && !rounds[rounds.length - 1].sideB)) {
+          rounds.push({ roundIndex: rounds.length, prompt: null, sideA: null, sideB: null });
+        }
+      }
       const last = rounds[rounds.length - 1];
-      if (last) last.sideA = m;
-    } else if (m.arenaSide === "B") {
-      const last = rounds[rounds.length - 1];
-      if (last) last.sideB = m;
+      if (!last) continue;
+      if (m.arenaSide === "A") last.sideA = m;
+      else last.sideB = m;
     }
   }
   // 将当前 streaming 消息路由到对应侧的最新一轮
   if (streaming) {
     const side = streaming.arenaSide === "A" ? "A" : streaming.arenaSide === "B" ? "B" : null;
     if (side) {
+      // 同样兜底：没有 round 则新建
+      if (rounds.length === 0) rounds.push({ roundIndex: 0, prompt: null, sideA: null, sideB: null });
       const last = rounds[rounds.length - 1];
       if (last) {
         if (side === "A") last.sideA = streaming;

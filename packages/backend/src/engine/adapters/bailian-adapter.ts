@@ -69,7 +69,7 @@ export class BailianAdapter implements IEngineAdapter {
     const traceId = crypto.randomUUID();
     const agentNodeId = `bailian_${crypto.randomUUID()}`;
     const startTime = Date.now();
-    const model = process.env.BAILIAN_MODEL ?? DEFAULT_MODEL;
+    const model = options.context?.model ?? process.env.BAILIAN_MODEL ?? DEFAULT_MODEL;
     const workingDirectory = options.context?.workingDirectory ?? process.cwd();
 
     // ─── AGENT_START ───────────────────────────────────────────
@@ -109,7 +109,6 @@ export class BailianAdapter implements IEngineAdapter {
           model,
           messages,
           stream: true,
-          stream_options: { include_usage: true },
           tools: toolsEnabled ? (toolDefs as never) : undefined,
           // thinking level 映射：off → 不启用推理，其他 → 启用 reasoning
           ...(options.context?.thinkingLevel && options.context.thinkingLevel !== "off"

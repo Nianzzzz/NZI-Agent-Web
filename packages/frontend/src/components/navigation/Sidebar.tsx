@@ -14,7 +14,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";import {
   Bot, Plus, LogOut, MoreHorizontal, Pencil, Trash2,
   Check, X, MessageSquare, ChevronLeft, ChevronRight,
-  Cpu, Sparkles, Trophy, History, Wrench, Globe, Plug,
+  Cpu, Sparkles, Trophy, History, Wrench, Globe, Plug, Settings,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import { useSessionStore, type Session } from "@/lib/session-store";
@@ -489,6 +489,22 @@ function SidebarInner({
           >
             <Plug className="h-4 w-4 shrink-0" />
             <span className="font-medium">MCP 服务器</span>
+          </Link>
+        )}
+        {/* Engines */}
+        {!collapsed && (
+          <div className="mb-2 mt-2 flex items-center gap-1.5 px-2 text-[10px] uppercase tracking-wider text-slate-400">
+            <Settings className="h-3 w-3" />
+            引擎
+          </div>
+        )}
+        {!collapsed && (
+          <Link
+            href="/dashboard/engines"
+            className="mb-1 flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-500 transition-colors hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/20"
+          >
+            <Settings className="h-4 w-4 shrink-0" />
+            <span className="font-medium">引擎配置</span>
           </Link>
         )}
         {!collapsed && user && (

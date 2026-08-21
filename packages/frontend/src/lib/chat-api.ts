@@ -403,3 +403,36 @@ export async function disconnectMcpServer(serverId: string): Promise<void> {
   });
   if (!res.ok) throw new Error(`Failed to disconnect MCP server: ${res.status}`);
 }
+
+// ─── Engine Configuration ──────────────────────────────────────────
+
+export interface EngineConfigItem {
+  id: string;
+  provider: "PI" | "GROK";
+  model: string | null;
+  thinkingLevel: "off" | "low" | "medium" | "high" | null;
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function fetchEngineConfigs(): Promise<EngineConfigItem[]> {
+  const res = await fetch(`${API_BASE}/api/engine-config`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to fetch engine configs: ${res.status}`);
+  const data = (await res.json()) as { configs: EngineConfigItem[] };
+  return data.configs;
+}
+
+export async function updateEngineConfig(
+  provider: "PI" | "GROK",
+  patch: { apiKey?: string; model?: string; thinkingLevel?: "off" | "low" | "medium" | "high"; isEnabled?: boolean },
+): Promise<EngineConfigItem> {
+  const res = await fetch(`${API_BASE}/api/engine-config/${provider}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`Failed to update engine config: ${res.status}`);
+  const data = (await res.json()) as { config: EngineConfigItem };
+  return data.config;
+}

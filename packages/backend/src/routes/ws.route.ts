@@ -10,6 +10,7 @@ import type { TokenPayload } from "../config/auth.config.js";
 import { WsChatController } from "../controllers/ws-chat.controller.js";
 import { WsArenaController } from "../controllers/ws-arena.controller.js";
 import { SkillService } from "../services/skill.service.js";
+import { EngineConfigService } from "../services/engine-config.service.js";
 
 interface WsRequest {
   url: string;
@@ -27,7 +28,8 @@ const wsChatRoutes: FastifyPluginAsync = async (fastify) => {
   }
 
   const skillService = (fastify as unknown as { skillService?: SkillService }).skillService ?? new SkillService(fastify.prisma);
-  const chatController = new WsChatController(sessionService, skillService, verify);
+  const engineConfigService = new EngineConfigService(fastify.prisma);
+  const chatController = new WsChatController(sessionService, skillService, verify, engineConfigService);
   fastify.get(
     "/api/ws/chat",
     { websocket: true },
@@ -36,7 +38,7 @@ const wsChatRoutes: FastifyPluginAsync = async (fastify) => {
     },
   );
 
-  const arenaController = new WsArenaController(arenaService, sessionService, verify);
+  const arenaController = new WsArenaController(arenaService, sessionService, verify, engineConfigService);
   fastify.get(
     "/api/ws/arena",
     { websocket: true },
